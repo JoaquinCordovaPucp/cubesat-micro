@@ -1,9 +1,31 @@
 #include <RadioLib.h>
+//Struct del paquete:
+//Struct del paquete:
+struct TelemetryPacket {
+    uint8_t TYPE;
+    uint16_t VOLT;   // mV  (V * 1000)
+    int16_t  INCX;   // rad * 1000
+    int16_t  INCY;   // rad * 1000
+    int32_t  LON;    // deg * 1e7
+    int32_t  LAT;    // deg * 1e7
+    uint32_t TIME;   // s * 10  -> décimas de segundo
+    int16_t  VVEL;   // m/s * 10
+    uint32_t PRES;   // Pa
+    uint16_t TEMP;   // K * 100
+    uint16_t ECO2;   // ppm
+    uint16_t UV;     // UV * 100
+    int16_t  GYRX;   // rad/s * 1000
+    int16_t  GYRY;   // rad/s * 1000
+    int16_t  GYRZ;   // rad/s * 1000
+    uint16_t ALT;    // m * 10
+    uint16_t CHK;    // CRC-16
+};
+
 //Definir funciones
 bool verificarPaqueteDato(String str);
 
 
-SX1278 radio = new Module(5, 4, 22, 3);
+SX1276 radio = new Module(5, 4, 22, 3);
 volatile bool operationDone = false;
 bool transmitFlag = false; //   Si Verdadero, entonces estaba transmitiendo
 int generalState = 0;
@@ -32,8 +54,10 @@ void IRAM_ATTR isrBoton() {
 void setup () {
     Serial.begin(9600);
     Serial.print("Inicio");
-    int state = radio.begin(); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI.
-
+    int state = radio.begin(915.0); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI.
+    radio.setSpreadingFactor(7);   // SF7: más rápido, suficiente para 400m
+    radio.setBandwidth(500.0);      // 500 kHz: más rápido, suficiente para 400m
+    
     pinMode(BTN_PIN, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(21), isrBoton, FALLING); // Interrupcion si es que se presiona el boton bro
 
@@ -54,23 +78,26 @@ void loop (){
         operationDone = false;
         if(transmitFlag){           // ***
             transmitFlag = false;
-            radio.startReceive();   // ****
+            radio.startReceive();   // **** 
+           
+            
         } else {                    // Si le llega algo escuchando
-            String str;
-            int state = radio.readData(str);    // Como le llego algo lo leo p, y es general para todos, por eso lo saco.
+            uint8_t buffer[64];    // (YA NO LO RECIBO COMO STRING)
+            int state = radio.readData(buffer, sizeof(buffer)); // Como le llego algo lo leo p, y es general para todos, por eso lo saco.
+            uint8_t type = buffer[0];
             if(state == RADIOLIB_ERR_NONE){
                 Serial.print("Llego algo causa.");
-                if (str == "Pulso"){
+                if (type == 0){
                     Serial.print("Me llego un pulso, mandando su ack");
                     radio.startTransmit("ack"); //(si transmitFlag es true se pone en recivece revisar en ***) Le mando su ack p
                     transmitFlag = true;
-                } else if(str == "Estoy vivo en standby XD"){
+                } else if(type == 1){
                     // No haces nada p
-                    radio.startReceive(); // Aca vuelvo a escuchar, xq el cambio que hago en **** es solo si es que estaba TX a RX, por lo que le debo decir que siga escuchando
-                } else if(verificarPaqueteDato(str)){
+                    radio.startReceive(); // Aca vuelvo a escuchar, xq el cambio que hago en **** es solo si es que estaba TX a RX, por lo que le debo decir que siga escuchando, LUEGO DE QUE YA RECIBIO ALGO
+                } else if(type == 2){
                     // guardarSD()
-                    Serial.print(str);
-                    radio.startReceive();   // Aca vuelvo a escuchar, xq el cambio que hago en **** es solo si es que estaba TX a RX, por lo que le debo decir que siga escuchando
+                    Serial.print("telemetria recibida");
+                    radio.startReceive();   // Aca vuelvo a escuchar, xq el cambio que hago en **** es solo si es que estaba TX a RX, por lo que le debo decir que siga escuchando, LUEGO DE QUE YA RECIBIO ALGO
                 }
             }
         }
