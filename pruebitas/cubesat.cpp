@@ -6,8 +6,7 @@
 #include <Adafruit_AHTX0.h>
 #include "Adafruit_LTR390.h"
 #include <Adafruit_MPU6050.h>
-//GPS
-#include <TinyGPSPlus.h>
+#include <TinyGPSPlus.h> //GPS
 
 //Struct del paquete:
 struct TelemetryPacket {
@@ -30,12 +29,6 @@ struct TelemetryPacket {
     uint16_t CHK;    // CRC-16
 };
 
-
-
-
-
-
-
 SX1276 radio = new Module(5, 4, 22, 3);
 Adafruit_BME280 bme;
 SparkFun_ENS160 ens160;
@@ -54,8 +47,7 @@ int generalState = 0; // This stores the state of the machine
 bool transmitFlag = false; //   Si Verdadero, entonces estaba transmitiendo
 
 void setFlag(void) {
-  // we sent or received  packet, set the flag
-  operationDone = true;
+  operationDone = true;     // Cuando termina una operacion se coloca en true, ya sea TX o RX. Util cuando se usa metodos no bloqueantes como startTransmit() o startReceive()
 }
 
 // Definicion de funciones
@@ -64,23 +56,18 @@ bool verificarPaqueteDato(String str);
 float readUVI();
 
 void setup () {
-    Serial.begin(115200);
-    
-    GPSserial.begin(9600, SERIAL_8N1, 16, 17);
-
-    //Iniciar I2C para bme280
-    Wire.begin(21, 26);
+    Serial.begin(115200);    
+    GPSserial.begin(9600, SERIAL_8N1, 16, 17); // Inciar GPS, con los pines en rx y tx seleccionados(rx del gps va al tx, y sucesivamente)
+    Wire.begin(21, 26); //Iniciar I2C (Lo uso para todos los sensores con I2C)
     if (!bme.begin(0x76)) {
         Serial.println("No se encontro BME280");
         while (1);
     }
-
     if(!ens160.begin(Wire, 0x52)){
         Serial.println("No se encontro ENS160");
         while(1);
     }
     ens160.setOperatingMode(SFE_ENS160_STANDARD);
-
     if ( !ltr390.begin() ) {
         Serial.println("Couldn't find LTR sensor!");
         while (1) delay(10);
@@ -88,18 +75,12 @@ void setup () {
     ltr390.setMode(LTR390_MODE_UVS);
     ltr390.setGain(LTR390_GAIN_3);
     ltr390.setResolution(LTR390_RESOLUTION_16BIT);
-
-
-
-
-
-    Serial.print("Inicio");
-    int state = radio.begin(915.0); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI.
+    
+    //INICIAR LORA
+    int state = radio.begin(915.0); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI, pero esta funcionando correctamente.
     radio.setSpreadingFactor(7);   // SF7: más rápido, suficiente para 400m
     radio.setBandwidth(500.0);      // 500 kHz: más rápido, suficiente para 400m
-
-
-
+    //TODO: se puede configurar mas las configuraciones para el LoRa; por defecto no conseguia alcanzar 10Hz de frecuencia, con esto parece ser suficiente. Falta testeo
     if(state == RADIOLIB_ERR_NONE) {
         Serial.print("Se inicio bien el modulo");
     } else {
@@ -107,22 +88,15 @@ void setup () {
         Serial.println(state);
         while (true) { delay(10); }         // Si no se inicializa bien te dice y se queda congelado en el loop
     }
-
-    int ensStatus = ens160.getFlags();
-	Serial.print("Gas Sensor Status Flag (0 - Standard, 1 - Warm up, 2 - Initial Start Up): ");
-	Serial.println(ensStatus);
     radio.setDio0Action(setFlag, RISING); // Cada vez que termina de TRANSMITIR o RECIBIR se ejecuta la funcion 
 
-    
-
-
-
-
+    // int ensStatus = ens160.getFlags();       CODIGO PARA VER SI ES QUE EL SENSOR DE CO2 ESTA TOMANDO MEDIDAS UTILES
+	// Serial.print("Gas Sensor Status Flag (0 - Standard, 1 - Warm up, 2 - Initial Start Up): ");
+	// Serial.println(ensStatus);
 }
 
 void loop() {
     TelemetryPacket pkt;
-
     float volt_v = 3.72;        // volts
     float incx_rad = 0.123;     // rad
     float incy_rad = -0.045;    // rad
@@ -156,9 +130,8 @@ void loop() {
     pkt.GYRZ = (int16_t)  lroundf(gyroz * 1000.0f);
     pkt.ALT  = (uint16_t) lroundf(alt_m * 10.0f);
 
-
-    while (GPSserial.available()) {
-        gps.encode(GPSserial.read());
+    while (GPSserial.available()) {     //Si que hay una lectura entonces se lo paso al encoder(parser) siempre. TODO: Revisar si esto seria util colocarlo
+        gps.encode(GPSserial.read());   
     }
     if(generalState == 0){
         unsigned long currentMillis = millis();

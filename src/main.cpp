@@ -29,21 +29,18 @@ SX1276 radio = new Module(5, 4, 22, 3);
 volatile bool operationDone = false;
 bool transmitFlag = false; //   Si Verdadero, entonces estaba transmitiendo
 int generalState = 0;
-const int BTN_PIN = 21; // Conectado a GND
+const int BTN_PIN = 21; // El otro pin conectado a GND
 bool lastBtnState = HIGH;
-
 volatile bool botonPresionado = false;
-
 volatile unsigned long lastInterrupt = 0;
 
 
 
 void setFlag(void) {
-  // we sent or received  packet, set the flag
-  operationDone = true;
+  operationDone = true;    //Se coloca en true cuando termina una tarea, ya sea de trasnmitir o recibir. Util cuando se usar startTransmit() o startReceive() 
 }
 
-
+//Interrupcion para el boton y evitar 
 void IRAM_ATTR isrBoton() {
   if(millis() - lastInterrupt > 1000){
       botonPresionado = true;
