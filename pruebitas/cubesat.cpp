@@ -96,39 +96,73 @@ void setup () {
 }
 
 void loop() {
-    TelemetryPacket pkt;
-    float volt_v = 3.72;        // volts
-    float incx_rad = 0.123;     // rad
-    float incy_rad = -0.045;    // rad
-    float lon_deg = -76.9123456;
-    float lat_deg = -12.0467891;
-    float time_s = 12.3;        // segundos desde encendido
-    float vvel_ms = 1.8;        // m/s
-    uint32_t pres_pa = 101325;  // Pa
-    float temp_k = 298.15;      // Kelvin
-    uint16_t eco2_ppm = 640;
-    float uv_index = 3.42;
-    float gyrox = 0.015;        // rad/s
-    float gyroy = -0.020;       // rad/s
-    float gyroz = 0.005;        // rad/s
-    float alt_m = 123.4;        // m
 
-    pkt.TYPE = 3; // Tipo 3 para los Datos Completos
-    pkt.VOLT = (uint16_t) lroundf(volt_v * 1000.0f);
+    TelemetryPacket pkt;
+    //Leer sensores 
+    //BME280: Alta frecuencia por lo que no hay problema en leerlo a cada rato
+    float temp_k  = bme.readTemperature() + 273.15f;        // Kelvin
+    float alt_m_bme280 = bme.readAltitude(1013.25f);        // m   // TODO: que significa 1013.25f el "f"???
+    uint32_t pres_pa = bme.readPressure();                  // Pa   // que significa el "t" del uint32_t????
+    
+    //ENS160: Este sensor tiene una funcion para verificar si esta listo para nueva lectura, sino lo dejo por defecto en -1 para saber. TODO: Mejrar metodo de no saber (-1)
+    uint16_t eco2_ppm = 0; // ppm, valor por defecto en caso de que no se pueda leer el sensor
+    if(ens160.checkDataStatus() ){ // Segun la libreria: Gas Sensor Status Flag (0 - Standard, 1 - Warm up, 2 - Initial Start Up), por lo que si es 0 esta listo para medidas utiles.
+        eco2_ppm = ens160.getECO2(); // ppm
+        // ens160.getAQI();     // TODO: adicionar otras lecturas
+        // ens160.getETOH();    
+        // ens160.getTempKelvin(); // El sensor tmb da temp , pero podria ser util usarlas para un promedio, pero necesita calibrar o compensansio o algo asi.
+    }
+
+    //LTR390
+    float uv_index = 0.0f;
+    if(ltr390.newDataAvailable()){
+        uv_index = readUVI(); // Indice UV, calculado segun la ganancia y resolucion configurada, y el valor crudo del sensor.
+    }
+
+    //GPS
+    while(GPSserial.available() > 0){
+        gps.encode(GPSserial.read());
+    }
+    //TODO: revisar si es que esta updateadad con .isUpdated() o algo asi, para no leer valores viejos, o si es que esta validos con .isValid(), para no leer valores erroneos. Por ahora lo dejo asi, pero seria bueno mejorar eso.
+    float lat_deg = gps.location.isValid() ? gps.location.lat() : 0.0f; // grados, valor por defecto en caso de que no se pueda leer el GPS
+    float lon_deg = gps.location.isValid() ? gps.location.lng() : 0.0f; // grados, valor por defecto en caso de que no se pueda leer el GPS
+    float alt_m_gps = gps.altitude.isValid() ? (float)gps.altitude.meters() : 0.0f;
+    float hvel_ms = gps.speed.isValid()     ? (float)gps.speed.mps() : 0.0f; // m/s, velocaidad horizontal calculada a partir de la velocidad sobre el suelo (ground speed) que da el GPS.
+    
+    //Time
+    float time_s = millis() / 1000.0f;
+    
+    
+    //MPU6050 (giroscopio y acelerometro)
+    float incx_rad = 0.0f;
+    float incy_rad = 0.0f;
+    float gyrox    = 0.0f;
+    float gyroy    = 0.0f;
+    float gyroz    = 0.0f;
+    
+    //POR IMPLEMENTAR:
+    // Voltaje (hardcodeado todavia)
+    float volt_v = 3.72f;
+    float vvel_ms = 0.0f; // Velocidad vertical, se podria calcular a partir de la altitud del GPS, pero el GPS no es tan preciso para eso, por lo que lo dejo en 0 por ahora, o se podria usar el altimetro barometrico para eso, pero tambien tiene ruido, por lo que lo dejo en 0 por ahora. Se podria mejorar eso con un filtro o algo asi.
+
+    // === ARMAR PAQUETE ===
+    pkt.TYPE = 3;
+    pkt.VOLT = (uint16_t) lroundf(volt_v   * 1000.0f);
     pkt.INCX = (int16_t)  lroundf(incx_rad * 1000.0f);
     pkt.INCY = (int16_t)  lroundf(incy_rad * 1000.0f);
-    pkt.LON  = (int32_t)  lroundf(lon_deg * 10000000.0f);
-    pkt.LAT  = (int32_t)  lroundf(lat_deg * 10000000.0f);
-    pkt.TIME = (uint32_t)  lroundf(time_s * 10.0f);     // décimas de segundo
-    pkt.VVEL = (int16_t)  lroundf(vvel_ms * 10.0f);
+    pkt.LON  = (int32_t)  lroundf(lon_deg  * 10000000.0f);
+    pkt.LAT  = (int32_t)  lroundf(lat_deg  * 10000000.0f);
+    pkt.TIME = (uint32_t) lroundf(time_s   * 10.0f);
+    pkt.VVEL = (int16_t)  lroundf(vvel_ms  * 10.0f); //Aca deberia ser el 
     pkt.PRES = pres_pa;
-    pkt.TEMP = (uint16_t) lroundf(temp_k * 100.0f);
+    pkt.TEMP = (uint16_t) lroundf(temp_k   * 100.0f);
     pkt.ECO2 = eco2_ppm;
     pkt.UV   = (uint16_t) lroundf(uv_index * 100.0f);
-    pkt.GYRX = (int16_t)  lroundf(gyrox * 1000.0f);
-    pkt.GYRY = (int16_t)  lroundf(gyroy * 1000.0f);
-    pkt.GYRZ = (int16_t)  lroundf(gyroz * 1000.0f);
-    pkt.ALT  = (uint16_t) lroundf(alt_m * 10.0f);
+    pkt.GYRX = (int16_t)  lroundf(gyrox    * 1000.0f);
+    pkt.GYRY = (int16_t)  lroundf(gyroy    * 1000.0f);
+    pkt.GYRZ = (int16_t)  lroundf(gyroz    * 1000.0f);
+    pkt.ALT  = (uint16_t) lroundf(((alt_m_bme280 + alt_m_gps)/2)  * 10.0f);   // Uso el promedio de BME280 y gps.
+
 
     while (GPSserial.available()) {     //Si que hay una lectura entonces se lo paso al encoder(parser) siempre. TODO: Revisar si esto seria util colocarlo
         gps.encode(GPSserial.read());   
@@ -273,7 +307,7 @@ void loop() {
                         if(parte2 != ""){   // Si ademas del ack, llega un comando para cambiar de estado, lo cambio, sino, me quedo en standby esperando comandos futuros
                             generalState = getStateByCmd(parte2);
                             Serial.print("Se recibio comando a cambiar a estado de: ");
-                            Serial.print(generalState); // IMPORTANTE: ACA HAY UN PROEBLEA, NO VUELVO A ESCUCHAR IMPORANTE !!!
+                            Serial.print(generalState); // IMPORTANTE: ACA HAY UN PROEBLEA, NO VUELVO A ESCUCHAR IMPORANTE !!! Soluciuonado en *(*)
                         }
                     }
         
@@ -286,6 +320,7 @@ void loop() {
                     generalState = getStateByCmd(str);
                 }
             }
+            radio.startReceive();   //  *(*) Vuelvo a escuchar despues de recibir, para seguir recibiendo futuros comandos. Siempre debe estar escuchando por defecto, solo transmite cuando es necesario.
         }
     }
 }
@@ -307,8 +342,11 @@ int getStateByCmd(String cmd) {
     return generalState;
 }
 
+
+//Esta funcion biene de la libreria de Adafruit para el LTR390, pero la adapte para que devuelva el indice UV en vez del valor crudo del sensor, y ademas le puse el calculo de sensibilidad segun la ganancia y resolucion que tengo configurada, para que devuelva un valor mas realista del indice UV.
+// https://github.com/adafruit/Adafruit_CircuitPython_LTR390/blob/main/adafruit_ltr390.py
 float readUVI() {
-  const float gain = 3.0f;
+  const float gain = 3.0f;              
   const float resolutionBits = 16.0f;
 
   float sensitivity = 2300.0f *
@@ -318,3 +356,17 @@ float readUVI() {
   float uvs = (float)ltr390.readUVS();
   return uvs / sensitivity;
 }
+//Funcion de adafruit original, para referencia(en python):
+// def uvi(self) -> float:
+//     """Read UV count and return calculated UV Index (UVI) value based upon the rated sensitivity
+//     of 1 UVI per 2300 counts at 18X gain factor and 20-bit resolution."""
+//     return (
+//         self.uvs
+//         / (
+//             (Gain.factor[self.gain] / 18)
+//             * (2 ** Resolution.factor[self.resolution])
+//             / (2**20)
+//             * 2300
+//         )
+//         * self._window_factor
+//     )
