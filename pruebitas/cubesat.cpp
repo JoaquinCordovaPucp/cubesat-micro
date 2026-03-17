@@ -43,7 +43,7 @@ unsigned long previousMillis = 0; // Stores the last time the function was execu
 const long interval1Sec = 1000; 
 const long interval100ms= 100;  //
 volatile bool operationDone = false;
-int generalState = 0; // This stores the state of the machine
+int generalState = 0; // This stores the state of the machine (0: recien prendido y emitiendo un pulso, 1: standby, 2: trasmitiendo datos basico, 3: transmitiendo datos completos)
 bool transmitFlag = false; //   Si Verdadero, entonces estaba transmitiendo
 
 void setFlag(void) {
@@ -142,10 +142,10 @@ void loop() {
             // transmissionState = radio.startTransmit("Pulso");   
             // Nota: No uso starTransmit(), xq esta es no bloqueante y requeriria usar la iterrupcion cuando termina,
             // pero no es necesario realizar otras cosas en paralelo. Por lo que uso el transmit, que bloquea el codigo
-            // hasta que se envia
-            TelemetryPacket hb;
-            hb.TYPE = 0; // Tipo 0 para el pulso
-            transmissionState = radio.startTransmit((uint8_t*)&hb, sizeof(hb));    // Transmito pulso desde el cubesat, y espero que se mande completamente
+            // hasta que se envia(Al final si uso startTransmit, no espero a que termine, TODO: revisar cual seria mejor si bloqueante o no)
+            TelemetryPacket hb = {}; // Creo un paquete vacio
+            hb.TYPE = 0; // Le asigno tipo 0 (pulso) al paquete para que el receptor sepa que solo es un pulso
+            transmissionState = radio.startTransmit((uint8_t*)&hb, sizeof(hb));    // Transmito pulso desde el cubesat, y espero NO que se mande completamente
             transmitFlag = true;
             // ESTO HUBISESE HECHO SI ES QUE ESPERO QUE SE MANDE, PERO MEJOR "LANZO LA ORDEN DE MANDAR", Y CUANDO OPERATIONDONE Y 
             // EL FLAG DE TRASMIT, EN EL LOOP LO PONE POR DEFECTO A ESCUCHAR NUEVAMENTE:
@@ -160,26 +160,22 @@ void loop() {
             //         while (true) { delay(10); }
             //     }
             // }
-
-
-
         }
     }
 
-    if(generalState == 1){
+    if(generalState == 1){ // Estado de StandBy, solo manda un pulso cada 1 segundo para decir que esta vivo, y escucha a tierra por si le llegan comandos para cambiar de estado
         unsigned long currentMillis = millis();
         if(currentMillis - previousMillis >= interval1Sec){
             previousMillis = currentMillis;
             Serial.print("StandBy \n");
-            TelemetryPacket stby = {};
+            TelemetryPacket stby = {}; // Creo paquete vacio
             stby.TYPE = 1; // Tipo 1 para el StandBy
             radio.startTransmit((uint8_t*)&stby, sizeof(stby));  // Solo manda pa saber que esta vivo, cada 1 segundo
             transmitFlag = true;
         }
     }
 
-
-    if(generalState == 2){
+    if(generalState == 2){     //Estado de tomar datos basicos, manda un paquete con algunos datos basicos cada 100 ms, y escucha a tierra por si le llegan comandos para cambiar de estado
         unsigned long currentMillis = millis();
         if(currentMillis - previousMillis >= interval100ms){
             previousMillis = currentMillis;
@@ -193,11 +189,12 @@ void loop() {
         }
     } 
 
-    if(generalState == 3){
+    if(generalState == 3){      //Estado de tomar datos AVANZADOS, manda un paquete con algunos datos basicos cada 100 ms, y escucha a tierra por si le llegan comandos para cambiar de estado
         unsigned long currentMillis = millis();
         if(currentMillis - previousMillis >= interval100ms){
-            
             previousMillis = currentMillis;
+            //EL CODIGO EN COMENTARIOS SI FUNCIONA, pero para probar estoy usando el paquete definido al principio del loop, con datos inventados.
+            //TODO: Descomentar y usar los datos reales, y revisar que el paquete se arme correctamente con los datos reales.
             // Serial.print("Temp: ");
             // Serial.println(bme.readTemperature());
             // if(ens160.checkDataStatus()){
@@ -211,8 +208,6 @@ void loop() {
             //     Serial.print(" | UVI: ");
             //     Serial.println(readUVI());
             // }
-
-
             // if (gps.location.isUpdated()) {
             //     Serial.print("Lat: ");
             //     Serial.println(gps.location.lat(), 6);
@@ -229,30 +224,22 @@ void loop() {
             // Serial.print("Mando Datos Completos \n");
             // // Aca se tomarian datos ps y calculos 
             // delay(12); // Delay imaginario
-
-
-
             // radio.startTransmit("Datos Completos XD"); 
             // transmitFlag = true;
-
-
-            radio.startTransmit((uint8_t*)&pkt, sizeof(pkt)); 
-            transmitFlag = true;
+            radio.startTransmit((uint8_t*)&pkt, sizeof(pkt));   // Mando el paquete de datos completos, cada 100 ms, con los datos inventados del principio del loop, para probar que se mande bien el paquete con los datos reales despues.
+            transmitFlag = true;                                //MUY IMPORTANTE COLOCAR EL TRANSMIT FLAG EN TRUE, PORQUE SI NO, CUANDO SE MANDE EL PAQUETE, Y SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, NO VA A SABER QUE TENIA QUE VOLVER A ESCUCHAR, POR LO QUE SE QUEDARIA SIN HACER NADA DESPUES DE MANDAR EL PRIMER PAQUETE. CON EL FLAG EN TRUE, CUANDO SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, VA A PONER POR DEFECTO A ESCUCHAR NUEVAMENTE.
             Serial.print("Mando Datos Completos \n");
         }
     }
 
-    if(generalState == -1){
+    if(generalState == -1){     //ESTADO DEBUG, NOSE XD, POR PARA TESTAR
         Serial.print("Morimos");
         while(1){
             delay(100);
         }
     }
-
-
-
-
-    if(operationDone) { // Si acaba de acabar algo
+    //ETAPA DE VOLVER A ESCUCHAR DESPUES DE TRANSMITIR O RECIBIR
+    if(operationDone) { // Si acaba de termina algo(mandar o incluso recibir, notese que cuando el starReceive recibe tmb deja de escuchar)
         operationDone = false;
 
         if(transmitFlag){   
@@ -262,7 +249,7 @@ void loop() {
             transmitFlag = false;
         } else {        // Si acaba de recibir algo
             String str;
-            int stateReceive = radio.readData(str);
+            int stateReceive = radio.readData(str); // Lo guarda en str, y el estado de la recepcion en stateReceive (si hubo error o no)
 
             if( generalState == 0) { // Recibio algo y estamos en la fase 0 (Pulsos del CB y espera del ACK)
                 if (stateReceive == RADIOLIB_ERR_NONE){
@@ -270,8 +257,8 @@ void loop() {
                     // Imprimir el content
                     Serial.print(F("Data:\t\t"));
                     Serial.println(str);
-                    int pos = str.indexOf('&');
-                    String parte1;
+                    int pos = str.indexOf('&'); // El formato del mensaje que se espera es "ack&comando", por lo que busco el & para separar 
+                    String parte1;              // el ack del comando, si es que llega un comando junto con el ack. Si no llega comando, entonces el mensaje es solo "ack"
                     String parte2;
                     if(pos != -1) {
                         parte1 = str.substring(0, pos);
@@ -280,14 +267,13 @@ void loop() {
                         parte1 = str;
                         parte2 = "";
                     }
-        
                     if(parte1 == "ack"){
-                        generalState = 1;
+                        generalState = 1; // Paso a estado standby
                         Serial.print("Se recibio ack de la estacion a Tierra");
-                        if(parte2 != ""){
+                        if(parte2 != ""){   // Si ademas del ack, llega un comando para cambiar de estado, lo cambio, sino, me quedo en standby esperando comandos futuros
                             generalState = getStateByCmd(parte2);
                             Serial.print("Se recibio comando a cambiar a estado de: ");
-                            Serial.print(generalState);
+                            Serial.print(generalState); // IMPORTANTE: ACA HAY UN PROEBLEA, NO VUELVO A ESCUCHAR IMPORANTE !!!
                         }
                     }
         
