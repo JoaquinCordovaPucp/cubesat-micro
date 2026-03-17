@@ -36,6 +36,7 @@ Adafruit_AHTX0 aht;
 Adafruit_LTR390 ltr390;
 TinyGPSPlus gps;
 HardwareSerial GPSserial(2);
+Adafruit_MPU6050 mpu;
 
 int transmissionState = RADIOLIB_ERR_NONE;  // Aca se guardara el estado del radio, osea los errores (codigo), o no error (codigo 0)
 
@@ -67,6 +68,16 @@ void setup () {
         Serial.println("No se encontro ENS160");
         while(1);
     }
+    if (!mpu.begin()) {
+        Serial.println("Failed to find MPU6050 chip");
+        while (1) {
+            delay(10);
+        }
+    }
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);         //Configuracion del Acel y Giro MPU6050. TODO: Ver la configuracion idonea para el caso de uso
+
     ens160.setOperatingMode(SFE_ENS160_STANDARD);
     if ( !ltr390.begin() ) {
         Serial.println("Couldn't find LTR sensor!");
@@ -134,9 +145,11 @@ void loop() {
     
     
     //MPU6050 (giroscopio y acelerometro)
+    sensors_event_t a, g, temp;
+    mpu.getEvent(&a, &g, &temp);
     float incx_rad = 0.0f;
     float incy_rad = 0.0f;
-    float gyrox    = 0.0f;
+    float gyrox    = g.gyro.x; // ACA ME QUEDE
     float gyroy    = 0.0f;
     float gyroz    = 0.0f;
     
