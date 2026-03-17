@@ -18,6 +18,9 @@ struct TelemetryPacket {
     int16_t  GYRX;   // rad/s * 1000
     int16_t  GYRY;   // rad/s * 1000
     int16_t  GYRZ;   // rad/s * 1000
+    int16_t  ACCX;   // m/s^2 * 1000
+    int16_t  ACCY;   // m/s^2 * 1000
+    int16_t  ACCZ;   // m/s^2 * 1000
     uint16_t ALT;    // m * 10
     uint16_t CHK;    // CRC-16
 };
@@ -77,8 +80,8 @@ void loop (){
         } else {                    // Si le llega algo escuchando
             uint8_t buffer[64];    // (YA NO LO RECIBO COMO STRING)
             int state = radio.readData(buffer, sizeof(buffer)); // Como le llego algo lo leo p, y es general para todos, por eso lo saco.
-            uint8_t type = buffer[0];
             if(state == RADIOLIB_ERR_NONE){
+                uint8_t type = buffer[0];
                 if (type == 0){
                     Serial.print("Me llego un pulso, mandando su ack");
                     radio.startTransmit("ack"); //(si transmitFlag es true se pone en recivece revisar en ***) Le mando su ack p
@@ -90,6 +93,12 @@ void loop (){
                 } else if(type == 3){ // TODO: FALTA EL TYPE 2 GAAA
                     // guardarSD()
                     // Serial.print("telemetria completa recibida");
+                    if(sizeof(TelemetryPacket) > sizeof(buffer)) {
+                        Serial.println("Error: TelemetryPacket mas grande que buffer");
+                        radio.startReceive();
+                        return;
+                    }
+
                     TelemetryPacket* pkt = (TelemetryPacket*)buffer;
                     
                     Serial.println("=== Telemetría recibida ===");
@@ -102,6 +111,8 @@ void loop (){
                     Serial.print("Lat: ");         Serial.print(pkt->LAT / 10000000.0f, 7); Serial.println();
                     Serial.print("Lon: ");         Serial.print(pkt->LON / 10000000.0f, 7); Serial.println();
                     Serial.print("Vel vertical: ");Serial.print(pkt->VVEL / 10.0f);   Serial.println(" m/s");
+                    Serial.print("GYR x,y,z: ");   Serial.print(pkt->GYRX / 1000.0f, 3); Serial.print(", "); Serial.print(pkt->GYRY / 1000.0f, 3); Serial.print(", "); Serial.println(pkt->GYRZ / 1000.0f, 3);
+                    Serial.print("ACC x,y,z: ");   Serial.print(pkt->ACCX / 1000.0f, 3); Serial.print(", "); Serial.print(pkt->ACCY / 1000.0f, 3); Serial.print(", "); Serial.println(pkt->ACCZ / 1000.0f, 3);
                     Serial.println("==========================");
                     
                     radio.startReceive();   // Aca vuelvo a escuchar, xq el cambio que hago en **** es solo si es que estaba TX a RX, por lo que le debo decir que siga escuchando, LUEGO DE QUE YA RECIBIO ALGO
@@ -115,6 +126,7 @@ void loop (){
         radio.startTransmit("TomarDatosTotales");
         transmitFlag = true;
     }
+    
 }
 
 
