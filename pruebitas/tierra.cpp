@@ -100,20 +100,28 @@ void loop (){
                     }
 
                     TelemetryPacket* pkt = (TelemetryPacket*)buffer;
-                    
-                    Serial.println("=== Telemetría recibida ===");
-                    Serial.print("Voltaje: ");     Serial.print(pkt->VOLT / 1000.0f);  Serial.println(" V");
-                    Serial.print("Temp: ");        Serial.print(pkt->TEMP / 100.0f);   Serial.println(" K");
-                    Serial.print("Presion: ");     Serial.print(pkt->PRES);            Serial.println(" Pa");
-                    Serial.print("Altitud: ");     Serial.print(pkt->ALT / 10.0f);     Serial.println(" m");
-                    Serial.print("CO2: ");         Serial.print(pkt->ECO2);            Serial.println(" ppm");
-                    Serial.print("UV: ");          Serial.print(pkt->UV / 100.0f);     Serial.println(" index");
-                    Serial.print("Lat: ");         Serial.print(pkt->LAT / 10000000.0f, 7); Serial.println();
-                    Serial.print("Lon: ");         Serial.print(pkt->LON / 10000000.0f, 7); Serial.println();
-                    Serial.print("Vel vertical: ");Serial.print(pkt->VVEL / 10.0f);   Serial.println(" m/s");
-                    Serial.print("GYR x,y,z: ");   Serial.print(pkt->GYRX / 1000.0f, 3); Serial.print(", "); Serial.print(pkt->GYRY / 1000.0f, 3); Serial.print(", "); Serial.println(pkt->GYRZ / 1000.0f, 3);
-                    Serial.print("ACC x,y,z: ");   Serial.print(pkt->ACCX / 1000.0f, 3); Serial.print(", "); Serial.print(pkt->ACCY / 1000.0f, 3); Serial.print(", "); Serial.println(pkt->ACCZ / 1000.0f, 3);
-                    Serial.println("==========================");
+
+                    // CSV en una sola linea con todos los campos recibidos del paquete.
+                    Serial.print(pkt->TYPE); Serial.print(',');
+                    Serial.print(pkt->VOLT); Serial.print(',');
+                    Serial.print(pkt->INCX); Serial.print(',');
+                    Serial.print(pkt->INCY); Serial.print(',');
+                    Serial.print(pkt->LON);  Serial.print(',');
+                    Serial.print(pkt->LAT);  Serial.print(',');
+                    Serial.print(pkt->TIME); Serial.print(',');
+                    Serial.print(pkt->VVEL); Serial.print(',');
+                    Serial.print(pkt->PRES); Serial.print(',');
+                    Serial.print(pkt->TEMP); Serial.print(',');
+                    Serial.print(pkt->ECO2); Serial.print(',');
+                    Serial.print(pkt->UV);   Serial.print(',');
+                    Serial.print(pkt->GYRX); Serial.print(',');
+                    Serial.print(pkt->GYRY); Serial.print(',');
+                    Serial.print(pkt->GYRZ); Serial.print(',');
+                    Serial.print(pkt->ACCX); Serial.print(',');
+                    Serial.print(pkt->ACCY); Serial.print(',');
+                    Serial.print(pkt->ACCZ); Serial.print(',');
+                    Serial.print(pkt->ALT);  Serial.print(',');
+                    Serial.println(pkt->CHK);
                     
                     radio.startReceive();   // Aca vuelvo a escuchar, xq el cambio que hago en **** es solo si es que estaba TX a RX, por lo que le debo decir que siga escuchando, LUEGO DE QUE YA RECIBIO ALGO
                 }

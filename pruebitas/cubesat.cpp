@@ -7,39 +7,20 @@
 #include "Adafruit_LTR390.h"
 #include <Adafruit_MPU6050.h>
 #include <TinyGPSPlus.h> //GPS
+//Librerias de sensores, para facilitar la lectura de datos y el guardado en el struct TelemetryPacket
+#include "sensors.hpp"
 
-//Struct del paquete:
-struct TelemetryPacket {
-    uint8_t TYPE;
-    uint16_t VOLT;   // mV  (V * 1000)
-    int16_t  INCX;   // rad * 1000
-    int16_t  INCY;   // rad * 1000
-    int32_t  LON;    // deg * 1e7
-    int32_t  LAT;    // deg * 1e7
-    uint32_t TIME;   // s * 10  -> décimas de segundo
-    int16_t  VVEL;   // m/s * 10
-    uint32_t PRES;   // Pa
-    uint16_t TEMP;   // K * 100
-    uint16_t ECO2;   // ppm
-    uint16_t UV;     // UV * 100
-    int16_t  GYRX;   // rad/s * 1000
-    int16_t  GYRY;   // rad/s * 1000
-    int16_t  GYRZ;   // rad/s * 1000
-    int16_t  ACCX;   // m/s^2 * 1000
-    int16_t  ACCY;   // m/s^2 * 1000
-    int16_t  ACCZ;   // m/s^2 * 1000
-    uint16_t ALT;    // m * 10
-    uint16_t CHK;    // CRC-16
-};
+Sensors dataSensors;            //Objeto de la clase Sensors(viene de la libreria sensors.hpp) Cambio RICK
+struct TelemetryPacket pckt;    //Struct que se va a mandar, con todos los datos de los sensores, y el CRC-16. (viene de la libreria sensors.hpp) Cambio RICK
 
 SX1276 radio = new Module(5, 4, 22, 3);
-Adafruit_BME280 bme;
-SparkFun_ENS160 ens160;
-Adafruit_AHTX0 aht;
-Adafruit_LTR390 ltr390;
+// Adafruit_BME280 bme;
+// SparkFun_ENS160 ens160;          // Ya se crean en el constructor de la clase Sensors, por lo que no es necesario volver a crearlos aca. Cambio RICK
+// Adafruit_AHTX0 aht;
+// Adafruit_LTR390 ltr390;
+// Adafruit_MPU6050 mpu;
 TinyGPSPlus gps;
 HardwareSerial GPSserial(2);
-Adafruit_MPU6050 mpu;
 
 int transmissionState = RADIOLIB_ERR_NONE;  // Aca se guardara el estado del radio, osea los errores (codigo), o no error (codigo 0)
 
@@ -60,35 +41,39 @@ bool verificarPaqueteDato(String str);
 float readUVI();
 
 void setup () {
-    Serial.begin(115200);    
+
+    dataSensors.init(&Serial); // Le paso el objeto Serial como puntero(Este objeto esta definido por Arduino.h) Cambio RICK
+    // dataSensors.mpu.setAccelerometerRange(MPU6050_RANGE_8_G); EJEMPLO DE COMO SE ACCEDE A LOS SENSORES DESDE EL OBJETO DE LA CLASE SENSORS, EN ESTE CASO CONFIGURANDO EL RANGO DEL ACELEROMETRO DEL MPU6050. Cambio RICK
+    // Serial.begin(115200);    
     GPSserial.begin(9600, SERIAL_8N1, 16, 17); // Inciar GPS, con los pines en rx y tx seleccionados(rx del gps va al tx, y sucesivamente)
     Wire.begin(21, 26); //Iniciar I2C (Lo uso para todos los sensores con I2C)
-    if (!bme.begin(0x76)) {
-        Serial.println("No se encontro BME280");
-        while (1);
-    }
-    if(!ens160.begin(Wire, 0x52)){
-        Serial.println("No se encontro ENS160");
-        while(1);
-    }
-    if (!mpu.begin()) {
-        Serial.println("Failed to find MPU6050 chip");
-        while (1) {
-            delay(10);
-        }
-    }
-    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);         //Configuracion del Acel y Giro MPU6050. TODO: Ver la configuracion idonea para el caso de uso
+    // if (!bme.begin(0x76)) {
+    //     Serial.println("No se encontro BME280");
+    //     while (1);
+    // }
+    // if(!ens160.begin(Wire, 0x52)){
+    //     Serial.println("No se encontro ENS160");
+    //     while(1);
+    // }
+    // if (!mpu.begin()) {
+    //     Serial.println("Failed to find MPU6050 chip");
+    //     while (1) {
+    //         delay(10);
+    //     }
+    // }
+    // if ( !ltr390.begin() ) {
+    //     Serial.println("Couldn't find LTR sensor!");
+    //     while (1) delay(10);
+    // }
 
-    ens160.setOperatingMode(SFE_ENS160_STANDARD);
-    if ( !ltr390.begin() ) {
-        Serial.println("Couldn't find LTR sensor!");
-        while (1) delay(10);
-    }
-    ltr390.setMode(LTR390_MODE_UVS);
-    ltr390.setGain(LTR390_GAIN_3);
-    ltr390.setResolution(LTR390_RESOLUTION_16BIT);
+    //ACCESO A TRAVES DEL OBJETO DE LA CLASE SENSORS, PARA CONFIGURAR LOS SENSORES. Cambio RICK
+    dataSensors.mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    dataSensors.mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    dataSensors.mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);         //Configuracion del Acel y Giro MPU6050. TODO: Ver la configuracion idonea para el caso de uso
+    dataSensors.ens160.setOperatingMode(SFE_ENS160_STANDARD);
+    dataSensors.ltr390.setMode(LTR390_MODE_UVS);
+    dataSensors.ltr390.setGain(LTR390_GAIN_3);
+    dataSensors.ltr390.setResolution(LTR390_RESOLUTION_16BIT);
     
     //INICIAR LORA
     int state = radio.begin(915.0); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI, pero esta funcionando correctamente.
@@ -261,24 +246,25 @@ void loop() {
             // radio.startTransmit("Datos Completos XD"); 
             // transmitFlag = true;
             //LEER SENSORES PARA ARMAR EL PAQUETE DE DATOS COMPLETOS (ANTES LO HACIA EN EL LOOP GENREAL, PERO ALGUNOS SENSORES SE DEMORABAN, Y ME BUGEABAN EL LOOP(NO ME LLEGAN LOS ACK)) 
-            TelemetryPacket pkt;
+            TelemetryPacket pkt; // CREO EL PAQUETE EN BASE AL STRUCT DEFINIDO EN SENSORS.HPP
             //BME280: Alta frecuencia por lo que no hay problema en leerlo a cada rato
-            float temp_k  = bme.readTemperature() + 273.15f;        // Kelvin
-            float alt_m_bme280 = bme.readAltitude(1013.25f);        // m   // TODO: que significa 1013.25f el "f"???
-            uint32_t pres_pa = bme.readPressure();                  // Pa   // que significa el "t" del uint32_t????
-            
+            // float temp_k  = bme.readTemperature() + 273.15f;        // Kelvin
+            // float alt_m_bme280 = bme.readAltitude(1013.25f);        // m   // TODO: que significa 1013.25f el "f"???
+            // uint32_t pres_pa = bme.readPressure();                  // Pa   // que significa el "t" del uint32_t????
+
+            dataSensors.save_bmeDATA(&pkt); //GUARDA LOS DATOS DEL BME280 EN EL PAQUETE CAMBIO RICK
             //ENS160: Este sensor tiene una funcion para verificar si esta listo para nueva lectura, sino lo dejo por defecto en -1 para saber. TODO: Mejrar metodo de no saber (-1)
             uint16_t eco2_ppm = 0; // ppm, valor por defecto en caso de que no se pueda leer el sensor
-            if(ens160.checkDataStatus() ){ // Segun la libreria: Gas Sensor Status Flag (0 - Standard, 1 - Warm up, 2 - Initial Start Up), por lo que si es 0 esta listo para medidas utiles.
-                eco2_ppm = ens160.getECO2(); // ppm
-                // ens160.getAQI();     // TODO: adicionar otras lecturas
-                // ens160.getETOH();    
-                // ens160.getTempKelvin(); // El sensor tmb da temp , pero podria ser util usarlas para un promedio, pero necesita calibrar o compensansio o algo asi.
+            if(dataSensors.ens160.checkDataStatus() ){ // Segun la libreria: Gas Sensor Status Flag (0 - Standard, 1 - Warm up, 2 - Initial Start Up), por lo que si es 0 esta listo para medidas utiles.
+                eco2_ppm = dataSensors.ens160.getECO2(); // ppm
+                // dataSensors.ens160.getAQI();     // TODO: adicionar otras lecturas
+                // dataSensors.ens160.getETOH();    
+                // dataSensors.ens160.getTempKelvin(); // El sensor tmb da temp , pero podria ser util usarlas para un promedio, pero necesita calibrar o compensansio o algo asi.
             }
 
             //LTR390
             float uv_index = 0.0f;
-            if(ltr390.newDataAvailable()){
+            if(dataSensors.ltr390.newDataAvailable()){
                 uv_index = readUVI(); // Indice UV, calculado segun la ganancia y resolucion configurada, y el valor crudo del sensor.
             }
 
@@ -298,7 +284,7 @@ void loop() {
             
             //MPU6050 (giroscopio y acelerometro)
             sensors_event_t a, g, temp;
-            mpu.getEvent(&a, &g, &temp);
+            dataSensors.mpu.getEvent(&a, &g, &temp);
             float incx_rad = 0.0f; // rad 
             float incy_rad = 0.0f; // rad
             float gyrox    = g.gyro.x;  // rad/s
@@ -322,8 +308,8 @@ void loop() {
             pkt.LAT  = (int32_t)  lroundf(lat_deg  * 10000000.0f);
             pkt.TIME = (uint32_t) lroundf(time_s   * 10.0f);
             pkt.VVEL = (int16_t)  lroundf(vvel_ms  * 10.0f); //Aca deberia ser el 
-            pkt.PRES = pres_pa;
-            pkt.TEMP = (uint16_t) lroundf(temp_k   * 100.0f);
+            // pkt.PRES = pres_pa;
+            // pkt.TEMP = (uint16_t) lroundf(temp_k   * 100.0f);
             pkt.ECO2 = eco2_ppm;
             pkt.UV   = (uint16_t) lroundf(uv_index * 100.0f);
             pkt.GYRX = (int16_t)  lroundf(gyrox    * 1000.0f);
@@ -332,7 +318,8 @@ void loop() {
             pkt.ACCX = (int16_t)  lroundf(acex     * 1000.0f);
             pkt.ACCY = (int16_t)  lroundf(acey     * 1000.0f);
             pkt.ACCZ = (int16_t)  lroundf(acez     * 1000.0f);
-            pkt.ALT  = (uint16_t) lroundf(((alt_m_bme280 + alt_m_gps)/2)  * 10.0f);   // Uso el promedio de BME280 y gps.
+            //TODO: revisar calculo de altitud, ahora solo estoy guardando de frente la altura del bme(libreria de sensores)
+            // pkt.ALT  = (uint16_t) lroundf(((alt_m_bme280 + alt_m_gps)/2)  * 10.0f);   // Uso el promedio de BME280 y gps.
 
             radio.startTransmit((uint8_t*)&pkt, sizeof(pkt));   // Mando el paquete de datos completos, cada 100 ms, con los datos inventados del principio del loop, para probar que se mande bien el paquete con los datos reales despues.
             transmitFlag = true;                                //MUY IMPORTANTE COLOCAR EL TRANSMIT FLAG EN TRUE, PORQUE SI NO, CUANDO SE MANDE EL PAQUETE, Y SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, NO VA A SABER QUE TENIA QUE VOLVER A ESCUCHAR, POR LO QUE SE QUEDARIA SIN HACER NADA DESPUES DE MANDAR EL PRIMER PAQUETE. CON EL FLAG EN TRUE, CUANDO SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, VA A PONER POR DEFECTO A ESCUCHAR NUEVAMENTE.
@@ -376,7 +363,7 @@ float readUVI() {
                       (gain / 18.0f) *
                       ((float)(1UL << 16) / (float)(1UL << 20));
 
-  float uvs = (float)ltr390.readUVS();
+  float uvs = (float)dataSensors.ltr390.readUVS();
   return uvs / sensitivity;
 }
 //Funcion de adafruit original, para referencia(en python):
