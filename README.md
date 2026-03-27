@@ -94,6 +94,10 @@ Promedios medidos (`n=8`, en microsegundos):
 
 Nota: `TXcall` mide solo el costo de llamar `startTransmit()` (no bloqueante), no el tiempo en aire de la trama LoRa.
 
+Test rapido de latencia de telemetria (medido desde `startTransmit` hasta `operationDone`):
+
+- Promedio observado: `35.240 ms`
+
 ## Estado Actual / TODO Rapido
 
 - Ajustar conversion real de `VOLT` desde ADC.

@@ -11,25 +11,42 @@
 //Struct del paquete:
 struct TelemetryPacket {
     uint8_t TYPE;
-    uint16_t VOLT;   // mV  (V * 1000)
-    int16_t  INCX;   // rad * 1000
-    int16_t  INCY;   // rad * 1000
-    int32_t  LON;    // deg * 1e7
-    int32_t  LAT;    // deg * 1e7
-    uint32_t TIME;   // s * 10  -> décimas de segundo
-    int16_t  VVEL;   // m/s * 10
-    uint32_t PRES;   // Pa
-    uint16_t TEMP;   // K * 100
-    uint16_t ECO2;   // ppm
-    uint16_t UV;     // UV * 100
-    int16_t  GYRX;   // rad/s * 1000
-    int16_t  GYRY;   // rad/s * 1000
-    int16_t  GYRZ;   // rad/s * 1000
-    int16_t  ACCX;   // m/s^2 * 1000
-    int16_t  ACCY;   // m/s^2 * 1000
-    int16_t  ACCZ;   // m/s^2 * 1000
-    uint16_t ALT;    // m * 10
+    uint16_t SEQ;
+    uint32_t TIME;      // s * 10  -> décimas de segundo
+    uint32_t FLAGS;     // Bitfield para indicar qué datos son válidos, por ejemplo: bit 0 para indicar si el campo VOLT es válido, bit 1 para INCX, etc. Esto es útil para no enviar datos erróneos o no actualizados, y para ahorrar ancho de banda al no enviar datos que no han cambiado.
+    uint16_t VOLT;      // 1. mV  (V * 1000)
+    int16_t  PITCH;      // 2. rad * 1000
+    int16_t  ROLL;      // 3. rad * 1000
+    int32_t  LON;       // 4. deg * 1e7
+    int32_t  LAT;       // 5. deg * 1e7
+    int16_t  VVEL;      // 6. m/s * 10
+    uint32_t PRES;      // 7. Pa
+    uint16_t TEMP;      // 8. K * 100
+    uint16_t ECO2;      // 9. ppm
+    uint16_t ETOH;     // 10. ppm
+    uint8_t AQI;        // 11. 1 - Excellent, 2 - Good, 3 - Moderate, 4 - Poor, 5 - Unhealthy
+    uint16_t UV;        // 12. UV * 100
+    int16_t  GYRX;      // 13. rad/s * 1000
+    int16_t  GYRY;      // 14. rad/s * 1000
+    int16_t  GYRZ;      // 15. rad/s * 1000
+    int16_t  ACCX;      // 16. m/s^2 * 1000
+    int16_t  ACCY;      // 17. m/s^2 * 1000
+    int16_t  ACCZ;      // 18. m/s^2 * 1000
+    uint16_t ALT;    // 19. m * 10
     uint16_t CHK;    // CRC-16
+};
+
+struct ACSData {
+    float incx_rad;
+    float incy_rad;
+    float gyrox;
+    float gyroy;
+    float gyroz;
+    float acex;
+    float acey;
+    float acez;
+    float roll;
+    float pitch;
 };
 
 
@@ -43,9 +60,15 @@ public:                         //para que el codigo del cubesat quede mas orden
     //Definicion de funciones auxiliares relacionadas a los sensores
     void init(HardwareSerial* serial);
     void save_bmeDATA(struct TelemetryPacket* data);
+    void save_ens160DATA(struct TelemetryPacket* data);
+    void save_ltr390DATA(struct TelemetryPacket* data);
+    void getACSData(struct ACSData* data);
+    void save_voltage(struct TelemetryPacket* data);
+    void save_acsDATA(struct TelemetryPacket* data);
+    void saveTime(struct TelemetryPacket* data);
     // float readUVI();
 private:
-    // void mostrar_contrasenha();
+    float readUVI();
 };
 
 #endif // SENSORS_HPP
