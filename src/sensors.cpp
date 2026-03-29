@@ -1,5 +1,6 @@
 #define voltagePin 34 //TODO: Elegir el pin
 #include "sensors.hpp"
+#include <Wire.h>
 
 void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un puntero a HardwareSerial
 
@@ -14,16 +15,18 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
         while (1);
     }
 
-    // ENS160
-    if (ens160.begin() != 0) {
-        serial->println("No se pudo encontrar el sensor ENS160, revisar conexiones!");
+
+    if (!ens160.begin()) {
+        serial->println("No se pudo encontrar/inicializar el ENS160!");
         while (1);
     }
-
-    // AHTX0
+    
+    //AHT21
     if (!aht.begin()) {
-        serial->println("No se pudo encontrar el sensor AHTX0, revisar conexiones!");
-        while (1);
+    Serial.println("Failed to find AHT10/AHT20 chip");
+    while (1) {
+      delay(10);
+    }
     }
 
     // LTR390
@@ -37,21 +40,23 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
         serial->println("No se pudo encontrar el sensor MPU6050, revisar conexiones!");
         while (1);
     }
+
+
 }
 
 void Sensors::save_bmeDATA(struct TelemetryPacket* data) {      //Data tambien es un puntero, por lo que se accede a sus campos con "->" en vez de "."
     //NOTA: Aca puedo acceder a bme.readTemp(), xq el objeto bme es un atributo de la clase Sensors, por lo que puedo acceder a sus funciones y atributos. Lo mismo para los otros sensores.
     float temp_k  = bme.readTemperature() + 273.15f;        // Kelvin
-    float alt_m_bme280 = bme.readAltitude(1013.25f);        // m 
+    // float alt_m_bme280 = bme.readAltitude();   // m 
     uint32_t pres_pa = bme.readPressure();                  // Pa
 
     //Guardar los datos en el puntero del struct TelemetryPacket    
     data->TEMP = (uint16_t)(temp_k * 100);
-    data->ALT = (uint16_t)(alt_m_bme280 * 10);
+    // data->ALT = (uint16_t)(alt_m_bme280 * 10);
     data->PRES = pres_pa;
 }
 
-void Sensors::save_ens160DATA(struct TelemetryPacket* data) {
+void Sensors::save_ens160DataNATH21(struct TelemetryPacket* data) {
     const uint32_t ECO2_VALID_BIT = (1UL << 9);
     const uint32_t ETOH_VALID_BIT = (1UL << 10);
     const uint32_t AQI_VALID_BIT = (1UL << 11);
@@ -59,27 +64,45 @@ void Sensors::save_ens160DATA(struct TelemetryPacket* data) {
     static uint16_t etoh_last = 0;
     static uint8_t aqi_last = 0;
 
+    sensors_event_t humidity, temp;
+    aht.getEvent(&humidity, &temp);
+    (void)humidity;
+    (void)temp;
+
     // Limpia solo los bits que maneja esta funcion.
     data->FLAGS &= ~(ECO2_VALID_BIT | ETOH_VALID_BIT | AQI_VALID_BIT);
 
-    if (ens160.checkDataStatus() && (ens160.getFlags() == 0)) { // Flag 0 = Standard, por lo que el sensor esta listo para medidas utiles. Si no es 0, esta en warmup o startup, y las medidas no son confiables.
-        uint16_t eco2_ppm = ens160.getECO2();   // ppm
-        uint16_t etoh_ppm = ens160.getETOH();   // ppm
-        uint8_t aqi = ens160.getAQI(); // 1 - Excellent, 2 - Good, 3 - Moderate, 4 - Poor, 5 - Unhealthy.
+
+    if ((ens160.available()) && ens160.hasNewData()) {
+        uint16_t eco2_ppm = ens160.getEco2();   // ppm
+        uint16_t tvoc_ppb = ens160.getTvoc();   // ppb
+        uint8_t aqi = (uint8_t)ens160.getAirQualityIndex_UBA(); // 1..5
+
+        Serial.print("ECO2: ");
+        Serial.print(eco2_ppm);
+        Serial.print(" ppm, TVOC: ");
+        Serial.print(tvoc_ppb);
+        Serial.print(" ppb, AQI: ");
+        Serial.println(aqi);
+
         eco2_last = eco2_ppm;
-        etoh_last = etoh_ppm;
+        etoh_last = tvoc_ppb; // Reuso temporal del campo ETOH para TVOC.
         aqi_last = aqi;
-        data->ETOH = etoh_ppm;
-        data->AQI = aqi;
+
         data->ECO2 = eco2_ppm;
-        data->FLAGS |= (ECO2_VALID_BIT | ETOH_VALID_BIT | AQI_VALID_BIT); // Setea los bits de validos
+        data->ETOH = tvoc_ppb;
+        data->AQI = aqi;
+        data->FLAGS |= (ECO2_VALID_BIT | ETOH_VALID_BIT | AQI_VALID_BIT);
         return;
-    } else {
-        data->ECO2 = eco2_last; // Valor anterior, aunque no es valido. Esto es para evitar que quede en 0, lo cual podria ser confuso.
-        data->ETOH = etoh_last;
-        data->AQI = aqi_last;
     }
+
+    // Sin dato nuevo: conserva ultimo valor.
+    data->ECO2 = eco2_last;
+    data->ETOH = etoh_last;
+    data->AQI = aqi_last;
 }
+
+
 
 void Sensors::save_ltr390DATA(struct TelemetryPacket* data) {
     static uint16_t uvi_last = 0;

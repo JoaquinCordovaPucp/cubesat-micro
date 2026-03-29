@@ -15,11 +15,6 @@ float Kd = 0.0; // Ganancia derivativa
 #include <RadioLib.h>
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
-#include <Adafruit_BME280.h>
-#include "SparkFun_ENS160.h"
-#include <Adafruit_AHTX0.h>
-#include "Adafruit_LTR390.h"
-#include <Adafruit_MPU6050.h>
 #include <TinyGPSPlus.h> //GPS
 #include "sensors.hpp" //Libreria creada para sensores, para facilitar la lectura de datos y el guardado en el struct TelemetryPacket
 #include "acs.hpp"     //Libreria creada para el control del ACS, para facilitar el control de los reaction wheels, y el calculo de las incx e incy a partir de los datos del acelerometro.
@@ -44,7 +39,6 @@ void setFlag(void) {        // Callback de la interrupcion de finalizacion de tr
 
 // Definicion de funciones axuliares
 int getStateByCmd(String cmd);
-float readUVI();
  //PID
 float previousErrorRoll = 0.0;
 float previousErrorPitch = 0.0;
@@ -63,10 +57,10 @@ void setup () {
     dataSensors.mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     dataSensors.mpu.setGyroRange(MPU6050_RANGE_500_DEG);
     dataSensors.mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);         //Configuracion del Acel y Giro MPU6050. TODO: Ver la configuracion idonea para el caso de uso
-    dataSensors.ens160.setOperatingMode(SFE_ENS160_STANDARD);
     dataSensors.ltr390.setMode(LTR390_MODE_UVS);
     dataSensors.ltr390.setGain(LTR390_GAIN_3);
     dataSensors.ltr390.setResolution(LTR390_RESOLUTION_16BIT);
+    dataSensors.ens160.setMode(ENS160_OPMODE_STD); // Configuracion del ENS160. TODO: Ver la configuracion idonea para el caso de uso
     
     //INICIAR LORA
     int state = radio.begin(915.0); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI, pero esta funcionando correctamente.
@@ -221,7 +215,7 @@ void loop() {
             previousMillis = currentMillis;
             TelemetryPacket pkt; // CREO EL PAQUETE EN BASE AL STRUCT DEFINIDO EN SENSORS.HPP
             dataSensors.save_bmeDATA(&pkt); //GUARDA LOS DATOS DEL BME280 EN EL PAQUETE
-            dataSensors.save_ens160DATA(&pkt); //GUARDA LOS DATOS DEL ENS160 EN EL PAQUETE
+            dataSensors.save_ens160DataNATH21(&pkt); //GUARDA LOS DATOS DEL ENS160 EN EL PAQUETE
             dataSensors.save_ltr390DATA(&pkt); //GUARDA LOS DATOS DEL LTR390 EN EL PAQUETE
             dataSensors.save_voltage(&pkt); //GUARDA EL VOLTAJE EN EL PAQUETE
             dataSensors.save_acsDATA(&pkt); //GUARDA LOS DATOS DEL ACS EN EL PAQUETE, INCLUYENDO INCX E INCY CALCULADOS A PARTIR DE LOS DATOS DEL ACELEROMETRO Y GIROSCOPIO
