@@ -2,7 +2,7 @@
 # TODO - Plataforma Telemetría ESP32
 
 ## Validación y Flags
-- [x] Implementar bitmasking para validez de datos en TelemetryPacket (FLAGS).
+- [] Implementar bitmasking para validez de datos en TelemetryPacket (FLAGS).
 	- Ejemplo: 11011 → solo el dato 3 (CO2) no es válido.
 
 ## Sensores
