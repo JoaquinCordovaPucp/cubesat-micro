@@ -104,3 +104,33 @@ Test rapido de latencia de telemetria (medido desde `startTransmit` hasta `opera
 - Revisar variables ACS (roll/pitch y conversiones rad/grados) para consistencia.
 - Afinar PID y validarlo con `dt` estable.
 - Completar `CHK` (CRC-16) del `TelemetryPacket`.
+
+## Notas de Integración y Buenas Prácticas
+
+- **ENS160:**
+  - El objeto ENS160 debe llamarse `ens160` en toda la base de código para evitar errores de definición múltiple y referencias inconsistentes.
+  - Siempre inicializar con `ens160.begin(&Wire, 0x52);` (o `0x53` si tu hardware lo requiere).
+  - No declarar objetos ENS160/ENS161 globales fuera de la clase `Sensors`.
+  - No incluir archivos `.inl.h` de la librería, solo el header principal.
+- **TelemetryPacket y Flags:**
+  - Se usan flags de validez (`FLAGS` como bitfield) para indicar qué datos del paquete son válidos.
+  - Se cachean los últimos valores de sensores para evitar enviar ceros o datos inválidos si no hay nueva lectura.
+- **Wire.h:**
+  - Es correcto y recomendado incluir `<Wire.h>` en cada archivo `.cpp` que use el bus I2C, sin riesgo de duplicados.
+- **Estructura Modular:**
+  - Cada sensor es miembro de la clase `Sensors`, y se accede a través de un único objeto global (`dataSensors`).
+  - No se deben definir instancias de sensores fuera de la clase para evitar colisiones de símbolos.
+- **Errores de compilación:**
+  - El error de "multiple definition" se resolvió unificando el nombre del miembro ENS160 y eliminando referencias globales o inconsistentes.
+
+## Changelog Técnico Reciente
+
+- Unificación de nombre de variable ENS160 (`ens16x` → `ens160`) en toda la base de código.
+- Corrección de inicialización de ENS160 con `begin(&Wire, 0x52)`.
+- Refactor de funciones de guardado de datos para usar flags de validez y caché de último valor.
+- Documentación de mejores prácticas para includes y modularidad.
+- Validación de integración de sensores y solución de errores de linker.
+
+---
+
+Para dudas sobre integración de sensores, flags de validez o estructura modular, revisar los comentarios en `src/sensors.hpp` y `src/sensors.cpp`.
