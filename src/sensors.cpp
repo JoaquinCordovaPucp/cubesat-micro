@@ -182,3 +182,19 @@ void Sensors::getACSData(struct ACSData* data) {
     data->roll = (a.acceleration.y/sqrt(a.acceleration.x*a.acceleration.x + a.acceleration.z*a.acceleration.z)) * (180.0/PI);
     data->pitch = -a.acceleration.x/sqrt(a.acceleration.y*a.acceleration.y + a.acceleration.z*a.acceleration.z) * (180.0/PI);
 }   
+
+// getBaroAltitude() — lee la altitud del BME280 en metros
+//
+// Usa la fórmula barométrica estándar con presión de referencia
+// 1013.25 hPa (nivel del mar estándar ISA).
+//
+// IMPORTANTE: esta función devuelve altitud ABSOLUTA sobre el
+// nivel del mar. En main.cpp se le restará la altitud inicial
+// (medida en setup()) para obtener la altitud RELATIVA al punto
+// de lanzamiento, que es lo que necesita el filtro complementario.
+//
+// Retorna: altitud en metros [m]
+
+float Sensors::getBaroAltitude() {
+    return bme.readAltitude(1013.25f);  // metros sobre el nivel del mar
+}
