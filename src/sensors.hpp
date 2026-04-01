@@ -66,6 +66,7 @@ public:                         //para que el codigo del cubesat quede mas orden
     void save_voltage(struct TelemetryPacket* data);
     void save_acsDATA(struct TelemetryPacket* data);
     void saveTime(struct TelemetryPacket* data);
+    float getBaroAltitude();
     // float readUVI();
 private:
     float readUVI();
