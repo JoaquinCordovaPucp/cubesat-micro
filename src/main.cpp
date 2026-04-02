@@ -22,7 +22,9 @@ float Kd = 0.0; // Ganancia derivativa
 
 Sensors dataSensors;        //Objeto de la clase Sensors(viene de la libreria sensors.hpp) Cambio RICK
 ACSController acs;          //Objeto de la clase ACSController(viene de la libreria acs.hpp) Cambio RICK
-ComplementaryFilter altFilter; // Objeto del filtro complementario
+AltitudeFilter altFilter;
+unsigned long filterLastime=0;
+float baroAltitudeRef = 0;
 
 // Altitud de referencia al arrancar (se mide en setup)
 // El filtro trabaja con altitud RELATIVA al punto de lanzamiento
@@ -87,7 +89,7 @@ void setup () {
     //   sigmaAccel = 0.0005 m/s²  → ruido del MPU6050
     //   sigmaBaro  = 0.018  m     → ruido del BME280
     //   accelThreshold = 0.1 m/s² → umbral ZUPT para detectar reposo
-    altFilter.begin(0.0005f, 0.018f, 0.1f);
+    altFilter.begin(0.12f,0.003f);
     // Calibrar barómetro: promedio de 50 lecturas como referencia
     // El filtro trabajará con altitud relativa a este punto (= 0 m)
     float sum = 0.0f;
@@ -255,38 +257,27 @@ void loop() {
             float alt_m_gps = gps.altitude.isValid() ? (float)gps.altitude.meters() : 0.0f;
             float hvel_ms = gps.speed.isValid()     ? (float)gps.speed.mps() : 0.0f; // m/s, velocaidad horizontal calculada a partir de la velocidad sobre el suelo (ground speed) que da el GPS.
                         
-            float vvel_ms = 0.0f; // Velocidad vertical, se podria calcular a partir de la altitud del GPS, pero el GPS no es tan preciso para eso, por lo que lo dejo en 0 por ahora, o se podria usar el altimetro barometrico para eso, pero tambien tiene ruido, por lo que lo dejo en 0 por ahora. Se podria mejorar eso con un filtro o algo asi.
             // FILTRO COMPLEMENTARIO
             // Calular dt real desde el último ciclo del filtro
             unsigned long now = micros();
             float dt = (float) (now-filterLastime) / 1000000.0f; // segundos
             filterLastime =now;
+            // 2. Preparar aceleracion (restar gravedad y convertir a metros)
+            float az_neta = ((float)pkt.ACCZ / 1000.0f) -9.81f;
+            // Altura barométrica (relativa al suelo)
+            float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
+            // la funcion que creamos
+            altFilter.estimate(az_neta,baro_relativa,dt);
+
             
-            // Obtener aceleración vertical inercial del MPU6050
-            // save_acsDATA() ya leyó el MPU6050 arriba, reutilizamos
-            // los datos del paquete para no leer dos veces el sensor
-            float acez_raw = pkt.ACCZ / 1000.0f; // reconvertir de int16 a float [m/s²]
- 
-            // Descontar gravedad para obtener aceleración neta vertical
-            // El MPU6050 en reposo lee ~9.81 m/s² en el eje z
-            float az = acez_raw - 9.81f;
- 
-            // Obtener altitud del BME280 relativa al punto de lanzamiento
-            float baroAlt = dataSensors.getBaroAltitude() - baroAltitudeRef;
- 
-            // Ejecutar el filtro complementario
-            altFilter.estimate(az, baroAlt, dt);
- 
-            // Leer resultados del filtro
-            float alt_filtrada = altFilter.getAltitude();   // metros
-            vvel_ms = altFilter.getVelocity();              // m/s
+            
 
             // === ARMAR PAQUETE ===
             pkt.TYPE = 3;
             pkt.LON  = (int32_t)  lroundf(lon_deg  * 10000000.0f);
             pkt.LAT  = (int32_t)  lroundf(lat_deg  * 10000000.0f);
-            pkt.VVEL = (int16_t)  lroundf(vvel_ms  * 10.0f); //Aca deberia ser el 
-            pkt.ALT = (uint16_t)  lround (alt_filtrada * 10.0f); // m*10
+            pkt.VVEL = (int16_t)  lroundf(altFilter.estimatedVelocity  * 10.0f); //Aca deberia ser el 
+            pkt.ALT = (uint16_t)  lround (altFilter.estimatedAltidude * 10.0f); // m*10
             //TODO: revisar calculo de altitud, ahora solo estoy guardando de frente la altura del bme(libreria de sensores)
             radio.startTransmit((uint8_t*)&pkt, sizeof(pkt));  
             transmitFlag = true;                                //MUY IMPORTANTE COLOCAR EL TRANSMIT FLAG EN TRUE, PORQUE SI NO, CUANDO SE MANDE EL PAQUETE, Y SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, NO VA A SABER QUE TENIA QUE VOLVER A ESCUCHAR, POR LO QUE SE QUEDARIA SIN HACER NADA DESPUES DE MANDAR EL PRIMER PAQUETE. CON EL FLAG EN TRUE, CUANDO SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, VA A PONER POR DEFECTO A ESCUCHAR NUEVAMENTE.
