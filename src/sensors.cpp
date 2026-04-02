@@ -15,12 +15,15 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
         while (1);
     }
 
+    ens160.enableDebugging(Serial);
 
-    if (!ens160.begin()) {
-        serial->println("No se pudo encontrar/inicializar el ENS160!");
-        while (1);
+    Wire.begin();
+    ens160.begin(&Wire, ENS160_I2C_ADDRESS);
+    serial->println("begin ens160..");
+    while (ens160.init() != true) {
+        serial->print(".");
+        delay(1000);
     }
-    
     //AHT21
     if (!aht.begin()) {
     Serial.println("Failed to find AHT10/AHT20 chip");
@@ -69,11 +72,13 @@ void Sensors::save_ens160DataNATH21(struct TelemetryPacket* data) {
     (void)humidity;
     (void)temp;
 
+    ens160.writeCompensation(temp.temperature, humidity.relative_humidity);
+
     // Limpia solo los bits que maneja esta funcion.
     data->FLAGS &= ~(ECO2_VALID_BIT | ETOH_VALID_BIT | AQI_VALID_BIT);
 
 
-    if ((ens160.available()) && ens160.hasNewData()) {
+    if (ens160.hasNewData()) {
         uint16_t eco2_ppm = ens160.getEco2();   // ppm
         uint16_t tvoc_ppb = ens160.getTvoc();   // ppb
         uint8_t aqi = (uint8_t)ens160.getAirQualityIndex_UBA(); // 1..5
