@@ -24,12 +24,8 @@ Sensors dataSensors;        //Objeto de la clase Sensors(viene de la libreria se
 ACSController acs;          //Objeto de la clase ACSController(viene de la libreria acs.hpp) Cambio RICK
 AltitudeFilter altFilter;
 unsigned long filterLastime=0;
-float baroAltitudeRef = 0;
+float baroAltitudeRef = 0.0f;
 
-// Altitud de referencia al arrancar (se mide en setup)
-// El filtro trabaja con altitud RELATIVA al punto de lanzamiento
-float baroAltitudeRef=0.0f;
-unsigned long filterLastime=0; // Para calcular dt real entre ciclos del filtro
 struct TelemetryPacket pckt;    //Struct que se va a mandar, con todos los datos de los sensores, y el CRC-16. (viene de la libreria sensors.hpp) Cambio RICK
 SX1276 radio = new Module(5, 4, 22, 3);
 TinyGPSPlus gps;
