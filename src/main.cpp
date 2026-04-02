@@ -272,7 +272,7 @@ void loop() {
             pkt.LON  = (int32_t)  lroundf(lon_deg  * 10000000.0f);
             pkt.LAT  = (int32_t)  lroundf(lat_deg  * 10000000.0f);
             pkt.VVEL = (int16_t)  lroundf(altFilter.estimatedVelocity  * 10.0f); //Aca deberia ser el 
-            pkt.ALT = (uint16_t)  lround (altFilter.estimatedAltitude * 10.0f); // m*10
+            pkt.ALT = (int16_t)  lround (altFilter.estimatedAltitude * 10.0f); // m*10
             //TODO: revisar calculo de altitud, ahora solo estoy guardando de frente la altura del bme(libreria de sensores)
             radio.startTransmit((uint8_t*)&pkt, sizeof(pkt));  
             transmitFlag = true;                                //MUY IMPORTANTE COLOCAR EL TRANSMIT FLAG EN TRUE, PORQUE SI NO, CUANDO SE MANDE EL PAQUETE, Y SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, NO VA A SABER QUE TENIA QUE VOLVER A ESCUCHAR, POR LO QUE SE QUEDARIA SIN HACER NADA DESPUES DE MANDAR EL PRIMER PAQUETE. CON EL FLAG EN TRUE, CUANDO SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, VA A PONER POR DEFECTO A ESCUCHAR NUEVAMENTE.

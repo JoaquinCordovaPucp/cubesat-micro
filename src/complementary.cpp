@@ -14,7 +14,11 @@ void AltitudeFilter::begin(float k_p, float k_i) {
 
 // Esta es la función que hace el cálculo pesado
 void AltitudeFilter::estimate(float accZ, float baroAlt, float dt) {
-    
+    // si la aceleración es menor a 0.3 m/s2, asumimos que es solo vibracion
+    if(abs(accZ)<0.3f){
+        accZ=0.0f;
+        estimatedVelocity =0.0f;
+    }
     // 1 Prediccion
     // Calculamos dónde "creemos" que estamos basándonos solo en la aceleración
     // d = v*t + 0.5*a*t^2
