@@ -67,7 +67,7 @@ void setup () {
     dataSensors.ltr390.setMode(LTR390_MODE_UVS);
     dataSensors.ltr390.setGain(LTR390_GAIN_3);
     dataSensors.ltr390.setResolution(LTR390_RESOLUTION_16BIT);
-    dataSensors.ens160.startStandardMeasure();
+    dataSensors.startENS160StandardMeasure();
     //INICIAR LORA
     int state = radio.begin(915.0); // Aca seteo la frecuenca a 915 como debe ser p // REVISAR DOCU: dice que en verdad es para SPI, pero esta funcionando correctamente.
     radio.setSpreadingFactor(7);   // SF7: más rápido, suficiente para 400m

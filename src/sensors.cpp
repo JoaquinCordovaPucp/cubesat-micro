@@ -1,6 +1,11 @@
 #define voltagePin 34 //TODO: Elegir el pin
 #include "sensors.hpp"
+#include <ScioSense_ENS16x.h>
 #include <Wire.h>
+
+// Mantiene la implementacion ENS160 en esta unidad de compilacion para evitar
+// definiciones duplicadas provenientes de headers .inl de la libreria.
+static ENS160 g_ens160;
 
 void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un puntero a HardwareSerial
 
@@ -15,12 +20,12 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
         while (1);
     }
 
-    ens160.enableDebugging(Serial);
+    g_ens160.enableDebugging(Serial);
 
     Wire.begin();
-    ens160.begin(&Wire, ENS160_I2C_ADDRESS);
+    g_ens160.begin(&Wire, ENS160_I2C_ADDRESS);
     serial->println("begin ens160..");
-    while (ens160.init() != true) {
+    while (g_ens160.init() != true) {
         serial->print(".");
         delay(1000);
     }
@@ -45,6 +50,10 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
     }
 
 
+}
+
+void Sensors::startENS160StandardMeasure() {
+    g_ens160.startStandardMeasure();
 }
 
 void Sensors::save_bmeDATA(struct TelemetryPacket* data) {      //Data tambien es un puntero, por lo que se accede a sus campos con "->" en vez de "."
@@ -72,16 +81,21 @@ void Sensors::save_ens160DataNATH21(struct TelemetryPacket* data) {
     (void)humidity;
     (void)temp;
 
-    ens160.writeCompensation(temp.temperature, humidity.relative_humidity);
+    // ENS16x espera compensacion en formato fijo interno (no float directo).
+    uint16_t tempIn = Ens16x_CalcTempInFromCelsius(temp.temperature);
+    uint16_t rhIn = Ens16x_CalcRhIn(humidity.relative_humidity);
+    g_ens160.writeCompensation(tempIn, rhIn);
+
+    // Refresca el buffer interno; sin update() getEco2/getTvoc leen valores viejos.
+    Result updateResult = g_ens160.update();
 
     // Limpia solo los bits que maneja esta funcion.
     data->FLAGS &= ~(ECO2_VALID_BIT | ETOH_VALID_BIT | AQI_VALID_BIT);
 
-
-    if (ens160.hasNewData()) {
-        uint16_t eco2_ppm = ens160.getEco2();   // ppm
-        uint16_t tvoc_ppb = ens160.getTvoc();   // ppb
-        uint8_t aqi = (uint8_t)ens160.getAirQualityIndex_UBA(); // 1..5
+    if (updateResult == RESULT_OK) {
+        uint16_t eco2_ppm = g_ens160.getEco2();   // ppm
+        uint16_t tvoc_ppb = g_ens160.getTvoc();   // ppb
+        uint8_t aqi = (uint8_t)g_ens160.getAirQualityIndex_UBA(); // 1..5
 
         Serial.print("ECO2: ");
         Serial.print(eco2_ppm);
@@ -101,7 +115,7 @@ void Sensors::save_ens160DataNATH21(struct TelemetryPacket* data) {
         return;
     }
 
-    // Sin dato nuevo: conserva ultimo valor.
+    // Sin dato nuevo o en calentamiento: conserva ultimo valor y no marca valido.
     data->ECO2 = eco2_last;
     data->ETOH = etoh_last;
     data->AQI = aqi_last;

@@ -6,7 +6,6 @@
 #include <Adafruit_AHTX0.h>
 #include "Adafruit_LTR390.h"
 #include <Adafruit_MPU6050.h>
-#include <ScioSense_ENS16x.h>
 #include <Wire.h>
 #define ENS160_I2C_ADDRESS 0x52
 
@@ -55,12 +54,12 @@ struct ACSData {
 class Sensors {                 //Se crea una clase para manejar todos los sensores, con sus respectivas funciones de inicializacion y lectura, 
 public:                         //para que el codigo del cubesat quede mas ordenado. Ademas, si se quiere cambiar algun sensor o agregar uno nuevo, se puede hacer facilmente modificando esta clase sin tener que tocar el codigo del cubesat.
     Adafruit_BME280 bme;        //Se declaran los objetos de cada sensor y podran ser accesados asi: 
-    ENS160 ens160;     //Sensors dataSensors    (crear un objeto de la clase Sensors, y guardarlo en la variable dataSensors)    //dataSensors.mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
     Adafruit_LTR390 ltr390;
     Adafruit_MPU6050 mpu;
     Adafruit_AHTX0 aht;
     //Definicion de funciones auxiliares relacionadas a los sensores
     void init(HardwareSerial* serial);
+    void startENS160StandardMeasure();
     void save_bmeDATA(struct TelemetryPacket* data);
     void save_ens160DataNATH21(struct TelemetryPacket* data);
     void save_ltr390DATA(struct TelemetryPacket* data);
