@@ -57,6 +57,10 @@ public:                         //para que el codigo del cubesat quede mas orden
     Adafruit_LTR390 ltr390;
     Adafruit_MPU6050 mpu;
     Adafruit_AHTX0 aht;
+    // Variables para guardar la calibración
+    float offsetX= 0.0;
+    float offsetY= 0.0;
+    float offsetZ= 0.0;
     //Definicion de funciones auxiliares relacionadas a los sensores
     void init(HardwareSerial* serial);
     void startENS160StandardMeasure();
