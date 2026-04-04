@@ -87,7 +87,7 @@ void AltitudeFilter::estimate(float accZ, float baroAlt, float dt) {
     zuptWindow[zuptIdx] = accZ;
     zuptIdx = (zuptIdx + 1) % ZUPT_SIZE;
     // Valirdar dt -si hay un gap grande, limitar para no integrar mal
-    if (dt > 0.1f) dt = 0.1f; // Limitar a 100 ms para evitar saltos grandes
+    if (dt > 0.2f) dt = 0.2f; // Caso hipotetico de que alguien llame a estimate()
     if(dt <= 0.0f) return;
 
     float baroFiltered = baroMedian(baroAlt); // Filtrar la altitud del barómetro con la mediana

@@ -5,6 +5,8 @@
 
 #define ROLL_PIN 25
 #define PITCH_PIN 34
+// EL DME280 en modo normal entrega un dato cada ~20 ms (50 Hz).
+#define FILTER_INTERVAL_MS 20
 
 const float desiredRoll = 0.0; // Ángulo deseado de roll (en grados)
 const float desiredPitch = 0.0; // Ángulo deseado de pitch (en grados)
@@ -28,7 +30,11 @@ AltitudeFilter altFilter; // Tu nuevo filtro
 float baroAltitudeRef = 0.0f;
 
 // Temporizador del filtro - ahora en el loop General (no solo en el estado3)
-unsigned long filterLastTime = 0;
+// Usamos millis() en vez de micros() porque el intervalo es 20 ms
+// mucho mayor que la resolución de milllis() (1 ms), micros() se
+// reserva para medir el dt real dentro del bloque del filtro.
+unsigned long filterLastMillis = 0;
+unsigned long filterLastMicros = 0; // para calcular el dt real en segundos
 
 struct TelemetryPacket pckt;    //Struct que se va a mandar, con todos los datos de los sensores, y el CRC-16. (viene de la libreria sensors.hpp) Cambio RICK
 SX1276 radio = new Module(5, 4, 22, 3);
@@ -92,7 +98,7 @@ void setup () {
     //  para la ventana ZUPT de 20 muestras. Si la velocidad sigue derivando
     //  en reposo, bajar a 0.10. Si el ZUPT corta movimientos lentos reales,
     //  subir a 0.20.
-    altFilter.begin(0.12f,0.003f,0.15f); // los pesos para el filtro complementario de la altura y la velocidad vertical, recordar que es un filtro complementario de 2do orden 
+    altFilter.begin(0.05f,0.003f,0.15f); // los pesos para el filtro complementario de la altura y la velocidad vertical, recordar que es un filtro complementario de 2do orden 
     // Calibrar barómetro: promedio de 50 lecturas como referencia
     float sum = 0.0f;
     for (int i = 0; i < 50; i++) {
@@ -104,8 +110,9 @@ void setup () {
     Serial.print(baroAltitudeRef);
     Serial.println(" m");
  
-    // Inicializar temporizador del filtro
-    filterLastTime = micros();
+    // Inicializar temporizadores del filtro
+    filterLastMillis = millis();
+    filterLastMicros = micros();
 }
 
 void loop() {
@@ -140,20 +147,28 @@ void loop() {
     //     acs.setRollOutput(outputRoll); // IMPORTNTE TODO: CLAMPEAR LOS OUPUTS PARA QUE SEAN LOGICOS
     // }
 
-    unsigned long now = micros();
-    float dt = (float)(now - filterLastTime) / 1000000.0f;
-    filterLastTime = now;
-
-    // Leer aceleración vertical del MPU6050
-    sensors_event_t a, g, temp;
-    dataSensors.mpu.getEvent(&a, &g, &temp);
-    float az_neta = a.acceleration.z -dataSensors.offsetZ- 9.81f;   // descontar gravedad
-
-    // Altitud barométrica relativa al punto de lanzamiento
-    float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
-
-    // Ejecutar el filtro (incluye mediana del baro + ZUPT internamente)
-    altFilter.estimate(az_neta, baro_relativa, dt);
+    unsigned long nowMillis = millis();
+    if(nowMillis - filterLastMillis >= FILTER_INTERVAL_MS) { // Cada 20 ms actualizo el filtro complementario
+        // dt real en segundos desde la ultima ejecucion del filtro
+        // usamos micros () aqui para precision de microsegundos
+        unsigned long nowMicros = micros();
+        float dt =(float)(nowMicros - filterLastMicros) / 1000000.0f; // Calculo el dt real en segundos usando micros() para mayor precision
+        // Atualizar ambos  timestamps
+        filterLastMillis = nowMillis;
+        filterLastMicros = nowMicros;
+        // condicional, si dt es invalido (primer ciclo, overflow de micros)
+        // usar el intervalo nominal en lugar de un valor basura
+        if(dt<=0.0f || dt >0.5f) dt = FILTER_INTERVAL_MS / 1000.0f;
+        // Leer aceleración vertical del MPU6050
+        sensors_event_t a, g, temp;
+        dataSensors.mpu.getEvent(&a, &g, &temp);
+        float az_neta = a.acceleration.z -dataSensors.offsetZ- 9.81f;   // descontar gravedad
+        // Altitud barométrica relativa al punto de lanzamiento
+        float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
+        // Ejecutar el filtro (incluye mediana del baro + ZUPT internamente)
+        altFilter.estimate(az_neta, baro_relativa, dt);
+    } 
+    
     
     //ETAPA DE VOLVER A ESCUCHAR DESPUES DE TRANSMITIR O RECIBIR
     if(operationDone) { // Si acaba de termina algo(mandar o incluso recibir, notese que cuando el starReceive recibe tmb deja de escuchar)
@@ -273,8 +288,7 @@ void loop() {
             float hvel_ms = gps.speed.isValid()     ? (float)gps.speed.mps() : 0.0f; // m/s, velocaidad horizontal calculada a partir de la velocidad sobre el suelo (ground speed) que da el GPS.
                         
             // LEeer resultados del filtro
-            // El filtro ya corrio varia veces desde el ultimo paquete
-            // (frecuencia del loop >>10HZ) solo leemos aqui
+            // El filtro ya corrio a 50 Hz para arriba
             float alt_filtrada =altFilter.estimatedAltitude; // Altitud estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la altitud, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
             float vvel_ms =altFilter.estimatedVelocity; // Velocidad vertical estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la velocidad vertical, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
 

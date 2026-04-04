@@ -32,7 +32,7 @@ struct TelemetryPacket {
     int16_t  GYRZ;      // 15. rad/s * 1000
     int16_t  ACCX;      // 16. m/s^2 * 1000
     int16_t  ACCY;      // 17. m/s^2 * 1000
-    int16_t  ACCZ;      // 18. m/s^2 * 1000
+    int16_t  ACCZ;      // 18. m/s^2 * 1000 - (incluye gravedad) (-9810 en reposo)
     int16_t ALT;    // 19. m * 10
     uint16_t CHK;    // CRC-16
 };
