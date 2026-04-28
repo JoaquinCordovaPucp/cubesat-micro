@@ -1,141 +1,117 @@
 #include "complementary.hpp"
-// ─────────────────────────────────────────────────────────────────
-// begin() — inicializa el filtro y calcula las ganancias k1 y k2
-//
-// Las ganancias se derivan matemáticamente de los errores
-// de los sensores (ver librería AltitudeEstimation de referencia):
-//
-//   k1 = sqrt(2 * sigmaAccel / sigmaBaro)
-//   k2 = sigmaAccel / sigmaBaro
-//
-// Si sigmaAccel es pequeño (acelerómetro preciso) →
-//   k1 y k2 pequeños → confías más en la física
-// Si sigmaBaro es pequeño (barómetro preciso) →
-//   k1 y k2 grandes → corriges más agresivamente con el barómetro
-// ─────────────────────────────────────────────────────────────────
-void ComplementaryFilter::begin(float sigmaAccel, float sigmaBaro,
-                                float accelThreshold) {
-    // Calcular ganancias
-    k1 = sqrt(2.0f * sigmaAccel / sigmaBaro);
-    k2 = sigmaAccel / sigmaBaro;
- 
-    // Guardar umbral ZUPT
-    this->accelThreshold = accelThreshold;
- 
-    // Inicializar estado en cero
-    // (altitud relativa al punto de lanzamiento)
-    pastAltitude      = 0.0f;
-    pastVelocity      = 0.0f;
+
+// Al empezar, ponemos todo en cero
+AltitudeFilter::AltitudeFilter() {
     estimatedAltitude = 0.0f;
     estimatedVelocity = 0.0f;
- 
-    // Inicializar ventana ZUPT en cero
-    ZUPTIdx = 0;
+    Kp = 0.12f; // Ganancia para la corrección de posición
+    Ki = 0.003f; // Ganancia para la corrección de velocidad (deriva)
+    accelThreshold = 0.15f; // Umbral para detectar reposo
+
+    baroIdx = 0;
+    baroFull = false;
+    for (uint8_t i = 0; i < BARO_MEDIAN_SIZE; i++) {
+        baroWindow[i] = 0.0f;
+    }
+    zuptIdx = 0;
     for (uint8_t i = 0; i < ZUPT_SIZE; i++) {
-        ZUPT[i] = 0.0f;
+        zuptWindow[i] = 0.0f;
     }
 }
- 
-// ─────────────────────────────────────────────────────────────────
-// estimate() — ejecuta el filtro complementario
-//
-// Basado en ComplementaryFilter::estimate() de AltitudeEstimation:
-// https://github.com/simondlevy/AltitudeEstimation
-//
-// Ecuación de ALTITUD:
-//   h = h_ant + dt * (v_ant + (k1 + k2*dt/2) * (baro - h_ant))
-//       + az * dt² / 2
-//
-//   Desglose:
-//   ┌─ h_ant                     → altitud anterior (memoria)
-//   ├─ dt * v_ant                → cuánto subí/bajé por velocidad
-//   ├─ dt*(k1+k2*dt/2)*(baro-h) → corrección del barómetro
-//   └─ az * dt² / 2              → efecto de la aceleración
-//
-// Ecuación de VELOCIDAD:
-//   v = v_ant + dt * (k2 * (baro - h_ant) + az)
-//
-//   Desglose:
-//   ┌─ v_ant                     → velocidad anterior (memoria)
-//   ├─ dt * k2 * (baro - h_ant)  → corrección del barómetro
-//   └─ dt * az                   → integración de la aceleración
-//
-// Parámetros:
-//   az      : aceleración vertical inercial [m/s²]
-//             YA con gravedad descontada (az_raw - 9.81)
-//   baroAlt : altitud del BME280 [m]
-//             YA relativa al punto de lanzamiento
-//   dt      : tiempo desde el ciclo anterior [s]
-// ─────────────────────────────────────────────────────────────────
-void ComplementaryFilter::estimate(float az, float baroAlt, float dt) {
- 
-    // Innovación: diferencia entre barómetro y estimación anterior
-    // Si es positiva → el barómetro dice que estamos más alto
-    // Si es negativa → el barómetro dice que estamos más bajo
-    float innovation = baroAlt - pastAltitude;
- 
-    // ── Ecuación de altitud ───────────────────────────────────────
-    estimatedAltitude = pastAltitude
-                      + dt * (pastVelocity
-                              + (k1 + k2 * dt / 2.0f) * innovation)
-                      + az * dt * dt / 2.0f;
- 
-    // ── Ecuación de velocidad ─────────────────────────────────────
-    estimatedVelocity = pastVelocity
-                      + dt * (k2 * innovation + az);
- 
-    // ── ZUPT: Zero Velocity Update ────────────────────────────────
-    // Si el CubeSat lleva 12 ciclos con aceleración casi nula
-    // (está quieto antes del lanzamiento o después de aterrizar)
-    // forzamos velocidad = 0 para evitar que derive
-    estimatedVelocity = applyZUPT(az, estimatedVelocity);
- 
-    // ── Actualizar memoria para el próximo ciclo ──────────────────
-    pastAltitude = estimatedAltitude;
-    pastVelocity = estimatedVelocity;
+
+// Aquí configuramos las ganancias que calculamos antes y el umbral ZUPT
+void AltitudeFilter::begin(float k_p, float k_i,float accel_threshold) {
+    Kp = k_p;
+    Ki = k_i;
+    accelThreshold = accel_threshold;
 }
- 
-// ─────────────────────────────────────────────────────────────────
-// applyZUPT() — Zero Velocity Update
+
+// Esta es la función que hace el cálculo pesado
+// baroMedian() — mediana de 5 muestras sobre el barómetro
 //
-// Mantiene una ventana circular de las últimas ZUPT_SIZE (12)
-// aceleraciones. Si TODAS son menores que accelThreshold,
-// significa que el sistema está en reposo → fuerza velocidad = 0
-//
-// Esto evita que pequeños errores del acelerómetro acumulen
-// velocidad falsa cuando el CubeSat está quieto.
-// ─────────────────────────────────────────────────────────────────
-float ComplementaryFilter::applyZUPT(float az, float vel) {
- 
-    // Guardar la aceleración actual en la ventana circular
-    ZUPT[ZUPTIdx] = az;
- 
-    // Avanzar el índice de forma circular (0,1,2,...,11,0,1,...)
-    ZUPTIdx = (ZUPTIdx + 1) % ZUPT_SIZE;
- 
-    // Revisar si TODAS las muestras son menores al umbral
-    for (uint8_t k = 0; k < ZUPT_SIZE; k++) {
-        if (ZUPT[k] > accelThreshold || ZUPT[k] < -accelThreshold) {
-            // Hay movimiento → devolver velocidad sin cambio
-            return vel;
+// El BME280 tiene picos esporádicos de ±0.5 m que se propagan
+// directamente al estimador como saltos de altitud/velocidad.
+// La mediana los elimina por completo sin el lag de un promedio.
+float AltitudeFilter::baroMedian(float newSample) {
+    baroWindow[baroIdx] = newSample; // cuando llega el dato, lo guardamos en el cajon
+    baroIdx = (baroIdx + 1) % BARO_MEDIAN_SIZE; // para que el indice vuelve a empezar y borra el dato mas viejo para ponerle el nuevo
+    if (baroIdx == 0) baroFull = true;
+    // Mientras la ventana no está llena, devolver muestra directa
+    if (!baroFull) return newSample;
+    // Copiar y ordenar (burbuja — rápido para N=5)
+    float s[BARO_MEDIAN_SIZE];
+    for (uint8_t i = 0; i < BARO_MEDIAN_SIZE; i++) s[i] = baroWindow[i]; // copiar el arreglo para no modificar el original
+    // arreglar con el algoritmo de burbuja
+    for (uint8_t i = 0; i < BARO_MEDIAN_SIZE - 1; i++) {
+        for (uint8_t j = 0; j < BARO_MEDIAN_SIZE - 1 - i; j++) {
+            if (s[j] > s[j+1]) { float t = s[j]; s[j] = s[j+1]; s[j+1] = t; }
         }
     }
- 
-    // Todas las muestras son pequeñas → reposo detectado
-    return 0.0f;
+    return s[BARO_MEDIAN_SIZE / 2]; // Devolver la mediana
+
 }
- 
-// ─────────────────────────────────────────────────────────────────
-// getAltitude() — devuelve la altitud estimada [m]
-// ─────────────────────────────────────────────────────────────────
-float ComplementaryFilter::getAltitude() {
-    return estimatedAltitude;
+
+// Función para detectar reposo
+// Si TODAS las aceleraciones nestas de la ventana estan por debajo de accelThreshold 
+// el cubesat esta quieto, forzar vel = 0.
+// Esto evita que la integracion acumule velocidad falsa en reposo. 
+bool AltitudeFilter::isResting() {
+    for(uint8_t i = 0; i < ZUPT_SIZE; i++) {
+        if (zuptWindow[i] > accelThreshold || zuptWindow[i] < -accelThreshold)
+            return false; // Si alguna muestra supera el umbral, no estamos en reposo
+    }
+    return true; // Si todas las muestras están dentro del umbral, estamos en reposo
 }
- 
-// ─────────────────────────────────────────────────────────────────
-// getVelocity() — devuelve la velocidad vertical estimada [m/s]
-// Positivo = subiendo, Negativo = bajando
-// ─────────────────────────────────────────────────────────────────
-float ComplementaryFilter::getVelocity() {
-    return estimatedVelocity;
+// estimate() — predictor-corrector mejorado
+//
+// Arquitectura original preservada (Kp/Ki):
+//   Predicción:  h += v*dt + 0.5*a*dt²
+//                v += a*dt
+//   Corrección:  error = baro_filtrado - h
+//                h += error * Kp
+//                v += error * Ki
+//
+// Mejoras aplicadas:
+//   1. Mediana de 5 muestras sobre baroAlt  → elimina picos ±0.5 m
+//   2. ZUPT de 20 muestras con umbral 0.15  → velocidad = 0 en reposo
+//   3. Umbral de vibración sube a 0.15 m/s² → menos cortes falsos
+//      durante movimiento suave
+//   4. Validación de dt                     → evita saltos tras gaps
+//
+// Parámetros:
+//   accZ    : aceleración vertical YA sin gravedad [m/s²]
+//   baroAlt : altitud BME280 YA relativa al lanzamiento [m]
+//   dt      : segundos desde el ciclo anterior
+void AltitudeFilter::estimate(float accZ, float baroAlt, float dt) {
+    // Guardar en ventana ZUPT antes de cualquier recorte 
+    zuptWindow[zuptIdx] = accZ;
+    zuptIdx = (zuptIdx + 1) % ZUPT_SIZE;
+    // Valirdar dt -si hay un gap grande, limitar para no integrar mal
+    if (dt > 0.2f) dt = 0.2f; // Caso hipotetico de que alguien llame a estimate()
+    if(dt <= 0.0f) return;
+
+    float baroFiltered = baroMedian(baroAlt); // Filtrar la altitud del barómetro con la mediana
+    // ZUPT: umbral para vibración/ruido del acelerómetro
+    // Original: < 0.3  → muy agresivo, cortaba movimientos reales lentos
+    // Ajustado: ZUPT detecta reposo por ventana; aquí solo suprimimos ruido puro
+    if(fabs(accZ)<0.05f){
+        accZ=0.0f;
+    }
+    // 1 Prediccion
+    // Calculamos dónde "creemos" que estamos basándonos solo en la aceleración
+    // d = v*t + 0.5*a*t^2
+    estimatedAltitude = estimatedAltitude + (estimatedVelocity * dt) + (0.5f * accZ * dt * dt);
+    estimatedVelocity = estimatedVelocity + (accZ * dt);
+
+    // Calculo del error
+    // Comparamos nuestra predicción con lo que dice el Barómetro (la realidad)
+   // ── Corrección con el barómetro filtrado ───────────────────────
+    float error = baroFiltered - estimatedAltitude;
+    estimatedAltitude += error * Kp;
+    estimatedVelocity += error * Ki;
+    
+    // ── ZUPT: si llevamos 20 ciclos quietos, forzar velocidad = 0 ──
+    if (isResting()) {
+        estimatedVelocity = 0.0f;
+    }
 }

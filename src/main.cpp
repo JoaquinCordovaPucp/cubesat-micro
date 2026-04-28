@@ -5,6 +5,8 @@
 
 #define ROLL_PIN 25
 #define PITCH_PIN 34
+// EL DME280 en modo normal entrega un dato cada ~20 ms (50 Hz).
+#define FILTER_INTERVAL_MS 20
 
 const float desiredRoll = 0.0; // Ángulo deseado de roll (en grados)
 const float desiredPitch = 0.0; // Ángulo deseado de pitch (en grados)
@@ -22,12 +24,18 @@ float Kd = 0.0; // Ganancia derivativa
 
 Sensors dataSensors;        //Objeto de la clase Sensors(viene de la libreria sensors.hpp) Cambio RICK
 ACSController acs;          //Objeto de la clase ACSController(viene de la libreria acs.hpp) Cambio RICK
-ComplementaryFilter altFilter; // Objeto del filtro complementario
+AltitudeFilter altFilter; // Tu nuevo filtro
 
-// Altitud de referencia al arrancar (se mide en setup)
-// El filtro trabaja con altitud RELATIVA al punto de lanzamiento
-float baroAltitudeRef=0.0f;
-unsigned long filterLastime=0; // Para calcular dt real entre ciclos del filtro
+// Altitud de referencia medida en setup (=punto de lanzamiento, 0,)
+float baroAltitudeRef = 0.0f;
+
+// Temporizador del filtro - ahora en el loop General (no solo en el estado3)
+// Usamos millis() en vez de micros() porque el intervalo es 20 ms
+// mucho mayor que la resolución de milllis() (1 ms), micros() se
+// reserva para medir el dt real dentro del bloque del filtro.
+unsigned long filterLastMillis = 0;
+unsigned long filterLastMicros = 0; // para calcular el dt real en segundos
+
 struct TelemetryPacket pckt;    //Struct que se va a mandar, con todos los datos de los sensores, y el CRC-16. (viene de la libreria sensors.hpp) Cambio RICK
 SX1276 radio = new Module(5, 4, 22, 3);
 TinyGPSPlus gps;
@@ -82,14 +90,16 @@ void setup () {
     }
     radio.setDio0Action(setFlag, RISING); // INTERRUCPCION: Cada vez que termina de TRANSMITIR o RECIBIR se ejecuta la funcion 
     // Inicializar filtro complementario
-    // Valores de sigma tomados de la liberíá AltitudeEstimation
-    // (simondlevy/AltitudeEstimation) como referencia:
-    //   sigmaAccel = 0.0005 m/s²  → ruido del MPU6050
-    //   sigmaBaro  = 0.018  m     → ruido del BME280
-    //   accelThreshold = 0.1 m/s² → umbral ZUPT para detectar reposo
-    altFilter.begin(0.0005f, 0.018f, 0.1f);
+    //  Kp = 0.12  → igual que antes: corrección de posición con el baro
+    //  Ki = 0.003 → igual que antes: corrección de deriva de velocidad
+    //  accelThreshold = 0.15 m/s² → umbral ZUPT (tercer parámetro, nuevo)
+    //
+    //  El tercer parámetro es el nuevo: controla cuándo se detecta reposo
+    //  para la ventana ZUPT de 20 muestras. Si la velocidad sigue derivando
+    //  en reposo, bajar a 0.10. Si el ZUPT corta movimientos lentos reales,
+    //  subir a 0.20.
+    altFilter.begin(0.05f,0.003f,0.15f); // los pesos para el filtro complementario de la altura y la velocidad vertical, recordar que es un filtro complementario de 2do orden 
     // Calibrar barómetro: promedio de 50 lecturas como referencia
-    // El filtro trabajará con altitud relativa a este punto (= 0 m)
     float sum = 0.0f;
     for (int i = 0; i < 50; i++) {
         sum += dataSensors.getBaroAltitude();
@@ -100,8 +110,9 @@ void setup () {
     Serial.print(baroAltitudeRef);
     Serial.println(" m");
  
-    // Inicializar temporizador del filtro
-    filterLastime = micros();
+    // Inicializar temporizadores del filtro
+    filterLastMillis = millis();
+    filterLastMicros = micros();
 }
 
 void loop() {
@@ -136,6 +147,28 @@ void loop() {
     //     acs.setRollOutput(outputRoll); // IMPORTNTE TODO: CLAMPEAR LOS OUPUTS PARA QUE SEAN LOGICOS
     // }
 
+    unsigned long nowMillis = millis();
+    if(nowMillis - filterLastMillis >= FILTER_INTERVAL_MS) { // Cada 20 ms actualizo el filtro complementario
+        // dt real en segundos desde la ultima ejecucion del filtro
+        // usamos micros () aqui para precision de microsegundos
+        unsigned long nowMicros = micros();
+        float dt =(float)(nowMicros - filterLastMicros) / 1000000.0f; // Calculo el dt real en segundos usando micros() para mayor precision
+        // Atualizar ambos  timestamps
+        filterLastMillis = nowMillis;
+        filterLastMicros = nowMicros;
+        // condicional, si dt es invalido (primer ciclo, overflow de micros)
+        // usar el intervalo nominal en lugar de un valor basura
+        if(dt<=0.0f || dt >0.5f) dt = FILTER_INTERVAL_MS / 1000.0f;
+        // Leer aceleración vertical del MPU6050
+        sensors_event_t a, g, temp;
+        dataSensors.mpu.getEvent(&a, &g, &temp);
+        float az_neta = a.acceleration.z -dataSensors.offsetZ- 9.81f;   // descontar gravedad
+        // Altitud barométrica relativa al punto de lanzamiento
+        float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
+        // Ejecutar el filtro (incluye mediana del baro + ZUPT internamente)
+        altFilter.estimate(az_neta, baro_relativa, dt);
+    } 
+    
     
     //ETAPA DE VOLVER A ESCUCHAR DESPUES DE TRANSMITIR O RECIBIR
     if(operationDone) { // Si acaba de termina algo(mandar o incluso recibir, notese que cuando el starReceive recibe tmb deja de escuchar)
@@ -252,41 +285,19 @@ void loop() {
             //TODO: revisar si es que esta updateadad con .isUpdated() o algo asi, para no leer valores viejos, o si es que esta validos con .isValid(), para no leer valores erroneos. Por ahora lo dejo asi, pero seria bueno mejorar eso.
             float lat_deg = gps.location.isValid() ? gps.location.lat() : 0.0f; // grados, valor por defecto en caso de que no se pueda leer el GPS
             float lon_deg = gps.location.isValid() ? gps.location.lng() : 0.0f; // grados, valor por defecto en caso de que no se pueda leer el GPS
-            float alt_m_gps = gps.altitude.isValid() ? (float)gps.altitude.meters() : 0.0f;
             float hvel_ms = gps.speed.isValid()     ? (float)gps.speed.mps() : 0.0f; // m/s, velocaidad horizontal calculada a partir de la velocidad sobre el suelo (ground speed) que da el GPS.
                         
-            float vvel_ms = 0.0f; // Velocidad vertical, se podria calcular a partir de la altitud del GPS, pero el GPS no es tan preciso para eso, por lo que lo dejo en 0 por ahora, o se podria usar el altimetro barometrico para eso, pero tambien tiene ruido, por lo que lo dejo en 0 por ahora. Se podria mejorar eso con un filtro o algo asi.
-            // FILTRO COMPLEMENTARIO
-            // Calular dt real desde el último ciclo del filtro
-            unsigned long now = micros();
-            float dt = (float) (now-filterLastime) / 1000000.0f; // segundos
-            filterLastime =now;
-            
-            // Obtener aceleración vertical inercial del MPU6050
-            // save_acsDATA() ya leyó el MPU6050 arriba, reutilizamos
-            // los datos del paquete para no leer dos veces el sensor
-            float acez_raw = pkt.ACCZ / 1000.0f; // reconvertir de int16 a float [m/s²]
- 
-            // Descontar gravedad para obtener aceleración neta vertical
-            // El MPU6050 en reposo lee ~9.81 m/s² en el eje z
-            float az = acez_raw - 9.81f;
- 
-            // Obtener altitud del BME280 relativa al punto de lanzamiento
-            float baroAlt = dataSensors.getBaroAltitude() - baroAltitudeRef;
- 
-            // Ejecutar el filtro complementario
-            altFilter.estimate(az, baroAlt, dt);
- 
-            // Leer resultados del filtro
-            float alt_filtrada = altFilter.getAltitude();   // metros
-            vvel_ms = altFilter.getVelocity();              // m/s
+            // LEeer resultados del filtro
+            // El filtro ya corrio a 50 Hz para arriba
+            float alt_filtrada =altFilter.estimatedAltitude; // Altitud estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la altitud, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
+            float vvel_ms =altFilter.estimatedVelocity; // Velocidad vertical estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la velocidad vertical, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
 
             // === ARMAR PAQUETE ===
             pkt.TYPE = 3;
             pkt.LON  = (int32_t)  lroundf(lon_deg  * 10000000.0f);
             pkt.LAT  = (int32_t)  lroundf(lat_deg  * 10000000.0f);
-            pkt.VVEL = (int16_t)  lroundf(vvel_ms  * 10.0f); //Aca deberia ser el 
-            pkt.ALT = (uint16_t)  lround (alt_filtrada * 10.0f); // m*10
+            pkt.VVEL = (int16_t)  lroundf(vvel_ms  * 10.0f); // dm/s 
+            pkt.ALT = (int16_t)  lround (alt_filtrada * 10.0f); // dm
             //TODO: revisar calculo de altitud, ahora solo estoy guardando de frente la altura del bme(libreria de sensores)
             radio.startTransmit((uint8_t*)&pkt, sizeof(pkt));  
             transmitFlag = true;                                //MUY IMPORTANTE COLOCAR EL TRANSMIT FLAG EN TRUE, PORQUE SI NO, CUANDO SE MANDE EL PAQUETE, Y SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, NO VA A SABER QUE TENIA QUE VOLVER A ESCUCHAR, POR LO QUE SE QUEDARIA SIN HACER NADA DESPUES DE MANDAR EL PRIMER PAQUETE. CON EL FLAG EN TRUE, CUANDO SE LEVANTE LA INTERRUPCION DE QUE SE TERMINO DE MANDAR, VA A PONER POR DEFECTO A ESCUCHAR NUEVAMENTE.

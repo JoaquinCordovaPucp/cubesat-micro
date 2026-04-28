@@ -32,8 +32,8 @@ struct TelemetryPacket {
     int16_t  GYRZ;      // 15. rad/s * 1000
     int16_t  ACCX;      // 16. m/s^2 * 1000
     int16_t  ACCY;      // 17. m/s^2 * 1000
-    int16_t  ACCZ;      // 18. m/s^2 * 1000
-    uint16_t ALT;    // 19. m * 10
+    int16_t  ACCZ;      // 18. m/s^2 * 1000 - (incluye gravedad) (-9810 en reposo)
+    int16_t ALT;    // 19. m * 10
     uint16_t CHK;    // CRC-16
 };
 
@@ -57,6 +57,10 @@ public:                         //para que el codigo del cubesat quede mas orden
     Adafruit_LTR390 ltr390;
     Adafruit_MPU6050 mpu;
     Adafruit_AHTX0 aht;
+    // Variables para guardar la calibración
+    float offsetX= 0.0;
+    float offsetY= 0.0;
+    float offsetZ= 0.0;
     //Definicion de funciones auxiliares relacionadas a los sensores
     void init(HardwareSerial* serial);
     void startENS160StandardMeasure();

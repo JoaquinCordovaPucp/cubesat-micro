@@ -2,55 +2,52 @@
 #define COMPLEMENTARY_HPP
 
 #include <Arduino.h>
-#include <math.h>
-#define ZUPT_SIZE 12
-class ComplementaryFilter{
-    public:
- 
-    // ── Inicializar el filtro ─────────────────────────────
-    // sigmaAccel     : desviación estándar del acelerómetro [m/s²]
-    //                  MPU6050 típico: 0.0005
-    // sigmaBaro      : desviación estándar del barómetro [m]
-    //                  BME280 típico: 0.018
-    // accelThreshold : umbral para detectar reposo [m/s²]
-    //                  Si az < threshold durante 12 ciclos → vel = 0
-    void begin(float sigmaAccel, float sigmaBaro, float accelThreshold);
- 
-    // ── Ejecutar el filtro (llamar en cada ciclo) ─────────
-    // az       : aceleración vertical inercial [m/s²]
-    //            (ya con gravedad descontada)
-    // baroAlt  : altitud del BME280 [m]
-    //            (ya relativa al punto de lanzamiento)
-    // dt       : tiempo desde el ciclo anterior [s]
-    void estimate(float az, float baroAlt, float dt);
- 
-    // ── Leer resultados ───────────────────────────────────
-    float getAltitude();   // altitud estimada [m]
-    float getVelocity();   // velocidad vertical estimada [m/s]
- 
-private:
- 
-    // Ganancias del filtro (se calculan en begin())
-    float k1;
-    float k2;
- 
-    // Umbral para el ZUPT
-    float accelThreshold;
- 
-    // Estado del filtro (se actualiza en cada estimate())
-    float pastAltitude;
-    float pastVelocity;
- 
-    // Resultados del último ciclo
+// Tamaño de la mediana para el barómetro
+// esto es para eliminar picos esporádicos de ±0.5 m del BME280 antes de que entren al filtro. N=5 es suficiente sin añadir lag notable.
+#define BARO_MEDIAN_SIZE 5
+// Tamaño de la ventana de reposo (ZUPT)
+// Si las últimas N aceleraciones netas son menores al umbral
+// declaramos reposo y forzamos velocidad = 0.
+// Con el filtro corriendo en el loop general (~5 ms/ciclo) → 20
+// muestras ≈ 100 ms de ventana.
+#define ZUPT_SIZE 20 
+
+class AltitudeFilter {
+public:
+    // Variables donde guardaremos la altura y velocidad calculada
     float estimatedAltitude;
     float estimatedVelocity;
- 
-    // Ventana ZUPT — guarda las últimas ZUPT_SIZE aceleraciones
-    float ZUPT[ZUPT_SIZE];
-    uint8_t ZUPTIdx;
- 
-    // Función interna: aplica ZUPT a la velocidad
-    // Si hay reposo → devuelve 0, si no → devuelve vel sin cambio
-    float applyZUPT(float az, float vel);
+
+    // Ganancias del filtro (los "votos de confianza")
+    float Kp; // Confianza en la posición
+    float Ki; // Confianza para corregir la deriva
+
+    // Umbral de de aceñeración para detectar reposo [m/s²]
+    float accelThreshold;
+
+    // Funciones
+    AltitudeFilter(); // Constructor (para iniciar variables)
+    // Inicializa el filtro con las ganancias y el umbral de aceleración
+    // Si la altitud sigue oscilando → subir Kp (ej: 0.20)
+    // Si la velocidad deriva mucho  → subir Ki (ej: 0.005)
+    void begin(float k_p, float k_i,float accel_threshold=0.15f); 
+
+    // Ejecutar un ciclo del filtro
+    // accZ  : aceleración vertical del MPU6050 YA sin gravedad [m/s²]
+    // baroAlt : altitud del BME280 YA relativa al punto de lanzamiento [m]
+    // dt    : tiempo desde el ciclo anterior [s]
+    void estimate(float accZ, float baroAlt, float dt);
+private:
+    // Ventana de mediana del barómetro
+    float baroWindow[BARO_MEDIAN_SIZE]; // historial donde el codigo va a gauardar las ultimas 5 muestras del barómetro 
+    uint8_t baroIdx; // Es un apuntador, le dice al codigo en que cajon vacio debe guardar la nueva lectura que acaba de llegar
+    bool baroFull; // para saber si ya se lleno los 5 cajones del arreglo
+    float baroMedian(float newSample);
+
+    // Ventana ZUPT
+    float zuptWindow[ZUPT_SIZE];
+    uint8_t zuptIdx;
+    bool isResting();
 };
-#endif // COMPLEMENTARY_HPP
+
+#endif
