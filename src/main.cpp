@@ -20,11 +20,11 @@ float Kd = 0.0; // Ganancia derivativa
 #include <TinyGPSPlus.h> //GPS
 #include "sensors.hpp" //Libreria creada para sensores, para facilitar la lectura de datos y el guardado en el struct TelemetryPacket
 #include "acs.hpp"     //Libreria creada para el control del ACS, para facilitar el control de los reaction wheels, y el calculo de las incx e incy a partir de los datos del acelerometro.
-#include "complementary.hpp" // Filtro complementario para estimar la altitud y velocidad
+#include "AltitudeEKF.hpp" //Libreria creada para el filtro de Kalman extendido, para estimar la altitud y velocidad vertical a partir de las mediciones del barometro y el acelerometro.
 
 Sensors dataSensors;        //Objeto de la clase Sensors(viene de la libreria sensors.hpp) Cambio RICK
 ACSController acs;          //Objeto de la clase ACSController(viene de la libreria acs.hpp) Cambio RICK
-AltitudeFilter altFilter; // Tu nuevo filtro
+AltitudeEKF altFilter; // Tu nuevo filtro
 
 // Altitud de referencia medida en setup (=punto de lanzamiento, 0,)
 float baroAltitudeRef = 0.0f;
@@ -89,16 +89,12 @@ void setup () {
         while (true) { delay(10); }         // Si no se inicializa bien te dice y se queda congelado en el loop
     }
     radio.setDio0Action(setFlag, RISING); // INTERRUCPCION: Cada vez que termina de TRANSMITIR o RECIBIR se ejecuta la funcion 
-    // Inicializar filtro complementario
-    //  Kp = 0.12  → igual que antes: corrección de posición con el baro
-    //  Ki = 0.003 → igual que antes: corrección de deriva de velocidad
-    //  accelThreshold = 0.15 m/s² → umbral ZUPT (tercer parámetro, nuevo)
-    //
-    //  El tercer parámetro es el nuevo: controla cuándo se detecta reposo
-    //  para la ventana ZUPT de 20 muestras. Si la velocidad sigue derivando
-    //  en reposo, bajar a 0.10. Si el ZUPT corta movimientos lentos reales,
-    //  subir a 0.20.
-    altFilter.begin(0.05f,0.003f,0.15f); // los pesos para el filtro complementario de la altura y la velocidad vertical, recordar que es un filtro complementario de 2do orden 
+    // Configuración del filtro de altitud (EKF)
+    altFilter.setFrecuenciaMuestreo(1000.0f / FILTER_INTERVAL_MS);
+    altFilter.setEstadoInicial(0.0f, 0.0f);
+    altFilter.setCovarianzaInicial(0.5f, 0.5f);
+    altFilter.setRuidoProceso(0.002f, 0.01f);
+    altFilter.setRuidoMedicion(1.50f);
     // Calibrar barómetro: promedio de 50 lecturas como referencia
     float sum = 0.0f;
     for (int i = 0; i < 50; i++) {
@@ -166,7 +162,7 @@ void loop() {
         // Altitud barométrica relativa al punto de lanzamiento
         float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
         // Ejecutar el filtro (incluye mediana del baro + ZUPT internamente)
-        altFilter.estimate(az_neta, baro_relativa, dt);
+        altFilter.actualizar(az_neta, baro_relativa, dt);
     } 
     
     
@@ -271,7 +267,7 @@ void loop() {
         unsigned long currentMillis = millis();
         if(currentMillis - previousMillis >= interval100ms){
             previousMillis = currentMillis;
-            TelemetryPacket pkt; // CREO EL PAQUETE EN BASE AL STRUCT DEFINIDO EN SENSORS.HPP
+            TelemetryPacket pkt= {}; // CREO EL PAQUETE EN BASE AL STRUCT DEFINIDO EN SENSORS.HPP
             dataSensors.save_bmeDATA(&pkt); //GUARDA LOS DATOS DEL BME280 EN EL PAQUETE
             dataSensors.save_ens160DataNATH21(&pkt); //GUARDA LOS DATOS DEL ENS160 EN EL PAQUETE
             dataSensors.save_ltr390DATA(&pkt); //GUARDA LOS DATOS DEL LTR390 EN EL PAQUETE
@@ -289,8 +285,8 @@ void loop() {
                         
             // LEeer resultados del filtro
             // El filtro ya corrio a 50 Hz para arriba
-            float alt_filtrada =altFilter.estimatedAltitude; // Altitud estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la altitud, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
-            float vvel_ms =altFilter.estimatedVelocity; // Velocidad vertical estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la velocidad vertical, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
+            float alt_filtrada =altFilter.getAltitud(); // Altitud estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la altitud, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
+            float vvel_ms =altFilter.getVelocidadVertical(); // Velocidad vertical estimada por el filtro complementario, que combina el barómetro y el acelerómetro para tener una mejor estimacion de la velocidad vertical, especialmente durante el vuelo donde el barómetro puede tener ruido o retraso.
 
             // === ARMAR PAQUETE ===
             pkt.TYPE = 3;
