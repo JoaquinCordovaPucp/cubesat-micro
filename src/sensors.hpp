@@ -5,37 +5,59 @@
 #include <Adafruit_BME280.h>
 #include <Adafruit_AHTX0.h>
 #include "Adafruit_LTR390.h"
-#include <Adafruit_MPU6050.h>
+#include <Adafruit_ICM20948.h>
 #include <Wire.h>
 #define ENS160_I2C_ADDRESS 0x52
 
+
+#pragma pack(push, 1)
 //Struct del paquete:
 struct TelemetryPacket {
-    uint8_t TYPE;
+    uint8_t  TYPE;
     uint16_t SEQ;
-    uint32_t TIME;      // s * 10  -> décimas de segundo
-    uint32_t FLAGS;     // Bitfield para indicar qué datos son válidos, por ejemplo: bit 0 para indicar si el campo VOLT es válido, bit 1 para INCX, etc. Esto es útil para no enviar datos erróneos o no actualizados, y para ahorrar ancho de banda al no enviar datos que no han cambiado.
-    uint16_t VOLT;      // 1. mV  (V * 1000)
-    int16_t  PITCH;      // 2. rad * 1000
-    int16_t  ROLL;      // 3. rad * 1000
-    int32_t  LON;       // 4. deg * 1e7
-    int32_t  LAT;       // 5. deg * 1e7
-    int16_t  VVEL;      // 6. m/s * 10
-    uint32_t PRES;      // 7. Pa
-    uint16_t TEMP;      // 8. K * 100
-    uint16_t ECO2;      // 9. ppm
-    uint16_t ETOH;     // 10. ppm
-    uint8_t AQI;        // 11. 1 - Excellent, 2 - Good, 3 - Moderate, 4 - Poor, 5 - Unhealthy
-    uint16_t UV;        // 12. UV * 100
-    int16_t  GYRX;      // 13. rad/s * 1000
-    int16_t  GYRY;      // 14. rad/s * 1000
-    int16_t  GYRZ;      // 15. rad/s * 1000
-    int16_t  ACCX;      // 16. m/s^2 * 1000
-    int16_t  ACCY;      // 17. m/s^2 * 1000
-    int16_t  ACCZ;      // 18. m/s^2 * 1000 - (incluye gravedad) (-9810 en reposo)
-    int16_t ALT;    // 19. m * 10
+    uint32_t TIME;   // Décimas de segundo
+    uint32_t FLAGS;  // Campos válidos
+
+    uint16_t VOLT;   // mV
+
+    int16_t PITCH;   // Valor transmitido * 1000
+    int16_t ROLL;    // Valor transmitido * 1000
+
+    int32_t LON;     // Grados * 1e7
+    int32_t LAT;     // Grados * 1e7
+
+    int16_t VVEL;    // m/s * 10
+
+    uint32_t PRES;   // Pa
+    uint16_t TEMP;   // K * 100
+
+    uint16_t ECO2;   // ppm
+    uint16_t ETOH;   // ppm
+    uint8_t  AQI;    // 1-5
+    uint16_t UV;     // UV * 100
+
+    int16_t GYRX;    // rad/s * 1000
+    int16_t GYRY;    // rad/s * 1000
+    int16_t GYRZ;    // rad/s * 1000
+
+    int16_t ACCX;    // m/s² * 1000
+    int16_t ACCY;    // m/s² * 1000
+    int16_t ACCZ;    // m/s² * 1000
+
+    int16_t ALT;     // m * 10
+
     uint16_t CHK;    // CRC-16
 };
+
+
+
+#pragma pack(pop)
+
+static_assert(
+    sizeof(TelemetryPacket) == 56,
+    "TelemetryPacket debe medir 56 bytes"
+);
+
 
 struct ACSData {
     float incx_rad;
@@ -55,7 +77,7 @@ class Sensors {                 //Se crea una clase para manejar todos los senso
 public:                         //para que el codigo del cubesat quede mas ordenado. Ademas, si se quiere cambiar algun sensor o agregar uno nuevo, se puede hacer facilmente modificando esta clase sin tener que tocar el codigo del cubesat.
     Adafruit_BME280 bme;        //Se declaran los objetos de cada sensor y podran ser accesados asi: 
     Adafruit_LTR390 ltr390;
-    Adafruit_MPU6050 mpu;
+    Adafruit_ICM20948 icm;
     Adafruit_AHTX0 aht;
     // Variables para guardar la calibración
     float offsetX= 0.0;

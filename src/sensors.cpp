@@ -22,7 +22,8 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
 
     g_ens160.enableDebugging(Serial);
 
-    Wire.begin();
+    // Wire.begin();
+    // Wire ya se inicializa en main.cpp con Wire.begin(21, 26);
     g_ens160.begin(&Wire, ENS160_I2C_ADDRESS);
     serial->println("begin ens160..");
     while (g_ens160.init() != true) {
@@ -43,19 +44,32 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
         while (1);
     }
     
-    //MPU6050
-    if (!mpu.begin()) {
-        serial->println("No se pudo encontrar el sensor MPU6050, revisar conexiones!");
+    const uint8_t ICM20948_ADDR = 0x68;
+
+    serial->println("Inicializando ICM-20948 en direccion 0x68...");
+
+    if (!icm.begin_I2C(ICM20948_ADDR, &Wire)) {
+        serial->println("No se pudo encontrar el sensor ICM-20948 en direccion 0x68, revisar conexiones!");
         while (1);
     }
-    // Calibracion del MPU6050
-    serial->println("Calibrando MPU6050...");
+
+    serial->println("ICM-20948 encontrado correctamente en direccion 0x68");
+
+    // Configuracion inicial del acelerometro y giroscopio del ICM-20948
+    icm.setAccelRange(ICM20948_ACCEL_RANGE_8_G);
+    icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);
+    icm.enableAccelDLPF(true, ICM20X_ACCEL_FREQ_23_9_HZ);
+    icm.enableGyrolDLPF(true, ICM20X_GYRO_FREQ_23_9_HZ);
+
+
+    // Calibracion del ICM-20948
+    serial->println("Calibrando ICM-20948...");
     delay(1000); // Esperar un momento para que el sensor se estabilice
     float sumaX=0, sumaY=0,sumaZ=0;
     int num_lecturas = 200;
     for(int i=0; i<num_lecturas; i++) {
-        sensors_event_t a, g, temp;
-        mpu.getEvent(&a, &g, &temp);
+        sensors_event_t a, g, temp,mag;
+        icm.getEvent(&a, &g, &temp,&mag);
         sumaX += a.acceleration.x;
         sumaY += a.acceleration.y;
         sumaZ += a.acceleration.z -9.81f;
@@ -65,7 +79,7 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
     offsetX = sumaX / num_lecturas;
     offsetY = sumaY / num_lecturas;
     offsetZ = sumaZ / num_lecturas;
-    serial->println("Calibracion MPU6050 completa!");
+    serial->println("Calibracion ICM-20948 completa!");
 
 }
 
@@ -206,17 +220,18 @@ void Sensors::saveTime(struct TelemetryPacket* data) {
 //     )
 
 void Sensors::getACSData(struct ACSData* data) {
-    //MPU6050 (giroscopio y acelerometro)
+    // ICM-20948 (giroscopio y acelerometro)
     sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-    data->acex = a.acceleration.x - offsetX; // Aplicar la compensación calculada en init()
-    data->acey = a.acceleration.y - offsetY;
-    data->acez = a.acceleration.z - offsetZ;
+    icm.getEvent(&a, &g, &temp);
+    data->acex = a.acceleration.x; // Aplicar la compensación calculada en init()
+    data->acey = a.acceleration.y;
+    data->acez = a.acceleration.z;
     data->gyrox = g.gyro.x;
     data->gyroy = g.gyro.y;
     data->gyroz = g.gyro.z;
     data->roll = (a.acceleration.y/sqrt(a.acceleration.x*a.acceleration.x + a.acceleration.z*a.acceleration.z)) * (180.0/PI);
     data->pitch = -a.acceleration.x/sqrt(a.acceleration.y*a.acceleration.y + a.acceleration.z*a.acceleration.z) * (180.0/PI);
+    Serial.print(data->acex); Serial.print(", "); Serial.print(data->acey); Serial.print(", "); Serial.println(data->acez); Serial.print("\n"); 
 }   
 
 // getBaroAltitude() — lee la altitud del BME280 en metros
