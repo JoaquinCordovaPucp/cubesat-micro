@@ -21,6 +21,12 @@ float Kd = 0.0; // Ganancia derivativa
 #include "sensors.hpp" //Libreria creada para sensores, para facilitar la lectura de datos y el guardado en el struct TelemetryPacket
 #include "acs.hpp"     //Libreria creada para el control del ACS, para facilitar el control de los reaction wheels, y el calculo de las incx e incy a partir de los datos del acelerometro.
 #include "complementary.hpp" // Filtro complementario para estimar la altitud y velocidad
+#include <ESP32Servo.h> // Libreria para controlar los servos, que en este caso son los reaction wheels. Se puede usar cualquier libreria de servos compatible con el ESP32, pero esta es la mas popular y facil de usar. Ademas, es compatible con el ESP32, lo cual es importante para evitar problemas de compatibilidad.
+
+
+Servo rueda;
+
+
 
 Sensors dataSensors;        //Objeto de la clase Sensors(viene de la libreria sensors.hpp) Cambio RICK
 ACSController acs;          //Objeto de la clase ACSController(viene de la libreria acs.hpp) Cambio RICK
@@ -63,15 +69,18 @@ unsigned long lastTime = 0;
 
 void setup () {
     Wire.begin(21, 26); //Iniciar I2C (Lo uso para todos los sensores con I2C)
+    rueda.attach(PITCH_PIN); // Inicializa el servo en el pin de roll, con los rangos por defecto (1000-2000 us)
     //Esta funcion inicia Serial y los sensores(incluido pin voltaje)
     dataSensors.init(&Serial); // Le paso el objeto Serial como puntero(Este objeto esta definido por Arduino.h)  
     acs.begin(ROLL_PIN, PITCH_PIN); // Inicializar el controlador ACS en los pines de roll/pitch usando rangos por defecto (1000-2000 us)
     GPSserial.begin(9600, SERIAL_8N1, 16, 17); // Inciar GPS, con los pines en rx y tx seleccionados(rx del gps va al tx, y sucesivamente)
 
-    //ACCESO A TRAVES DEL OBJETO DE LA CLASE SENSORS, PARA CONFIGURAR LOS SENSORES.
-    dataSensors.mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-    dataSensors.mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    dataSensors.mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);         //Configuracion del Acel y Giro MPU6050. TODO: Ver la configuracion idonea para el caso de uso
+    // Configuracion del Acelerometro y Giroscopio ICM-20948
+    dataSensors.icm.setAccelRange(ICM20948_ACCEL_RANGE_8_G);
+    dataSensors.icm.setGyroRange(ICM20948_GYRO_RANGE_500_DPS);
+    dataSensors.icm.enableAccelDLPF(true, ICM20X_ACCEL_FREQ_23_9_HZ);
+    dataSensors.icm.enableGyrolDLPF(true, ICM20X_GYRO_FREQ_23_9_HZ);
+
     dataSensors.ltr390.setMode(LTR390_MODE_UVS);
     dataSensors.ltr390.setGain(LTR390_GAIN_3);
     dataSensors.ltr390.setResolution(LTR390_RESOLUTION_16BIT);
@@ -114,38 +123,55 @@ void setup () {
     filterLastMillis = millis();
     filterLastMicros = micros();
 }
+bool bandera_rueda =true;
 
 void loop() {
-    
-    // //Control ACS
-    // if(millis() - lastTime >= (interval10ms * 2)){ // Cada 20ms actualizo el control del ACS, para mantener la estabilidad del Cubesat. Se puede ajustar el intervalo segun se vea necesario, pero no es necesario que sea mas rapido que esto, y si es mas lento podria afectar la estabilidad.{
-    //     ACSData dataACS;
-    //     dataSensors.getACSData(&dataACS); //Guardo los datos del mput TODO: FALTA OTROS PARA ALTITUD
-    //     unsigned long now = millis();
-    //     float dt = (now - lastTime) / 1000.0; // Convertir a segundos
-        
-    //     //PID
-    //     //Proporcional
-    //     float errorRoll = desiredRoll - dataACS.roll;
-    //     float errorPitch = desiredPitch - dataACS.pitch;
-    //     //Integral
-    //     integralRoll += errorRoll * dt;
-    //     integralPitch += errorPitch * dt;
-    //     //Derivativo
-    //     float derivativeRoll = (errorRoll - previousErrorRoll) / dt;
-    //     float derivativePitch = (errorPitch - previousErrorPitch) / dt;
-    //     //Salida del PID
-    //     float outputRoll = Kp * errorRoll + Ki * integralRoll + Kd * derivativeRoll;
-    //     float outputPitch = Kp * errorPitch + Ki * integralPitch + Kd * derivativePitch;
-    //     //Actualizar errores anteriores y tiempo
-    //     previousErrorRoll = errorRoll;
-    //     previousErrorPitch = errorPitch;
-    //     lastTime = now;
 
-    //     //Controlar Reaction Wheel
-    //     acs.setPitchOutput(outputPitch);
-    //     acs.setRollOutput(outputRoll); // IMPORTNTE TODO: CLAMPEAR LOS OUPUTS PARA QUE SEAN LOGICOS
-    // }
+    
+    
+
+    if(bandera_rueda){
+        rueda.writeMicroseconds(1000); // Envia el pulso neutro (1500 microsegundos) para que el reaction wheel no gire al inicio, y evitar movimientos indeseados al prender el Cubesat. El pulso neutro es el que hace que el servo se quede quieto, sin girar ni en un sentido ni en otro. Es importante enviar este pulso al inicio para evitar que el reaction wheel gire de forma inesperada al prender el Cubesat, lo cual podria afectar la estabilidad del mismo. Luego, cuando se quiera controlar el reaction wheel, se pueden enviar pulsos mayores o menores a 1500 microsegundos para que gire en un sentido u otro.
+        delay(1000);
+        rueda.writeMicroseconds(1200);
+        delay(1000);
+        rueda.writeMicroseconds(1000);
+
+        bandera_rueda = false;
+    }
+
+
+
+
+    // Control ACS
+    /*if(millis() - lastTime >= (interval10ms * 2)){ // Cada 20ms actualizo el control del ACS, para mantener la estabilidad del Cubesat. Se puede ajustar el intervalo segun se vea necesario, pero no es necesario que sea mas rapido que esto, y si es mas lento podria afectar la estabilidad.{
+        ACSData dataACS;
+        dataSensors.getACSData(&dataACS); //Guardo los datos del mput TODO: FALTA OTROS PARA ALTITUD
+        unsigned long now = millis();
+        float dt = (now - lastTime) / 1000.0; // Convertir a segundos
+        
+        //PID
+        //Proporcional
+        float errorRoll = desiredRoll - dataACS.roll;
+        float errorPitch = desiredPitch - dataACS.pitch;
+        //Integral
+        integralRoll += errorRoll * dt;
+        integralPitch += errorPitch * dt;
+        //Derivativo
+        float derivativeRoll = (errorRoll - previousErrorRoll) / dt;
+        float derivativePitch = (errorPitch - previousErrorPitch) / dt;
+        //Salida del PID
+        float outputRoll = Kp * errorRoll + Ki * integralRoll + Kd * derivativeRoll;
+        float outputPitch = Kp * errorPitch + Ki * integralPitch + Kd * derivativePitch;
+        //Actualizar errores anteriores y tiempo
+        previousErrorRoll = errorRoll;
+        previousErrorPitch = errorPitch;
+        lastTime = now;
+
+        //Controlar Reaction Wheel
+        acs.setPitchOutput(outputPitch);
+        acs.setRollOutput(outputRoll); // IMPORTNTE TODO: CLAMPEAR LOS OUPUTS PARA QUE SEAN LOGICOS
+    }*/
 
     unsigned long nowMillis = millis();
     if(nowMillis - filterLastMillis >= FILTER_INTERVAL_MS) { // Cada 20 ms actualizo el filtro complementario
@@ -161,7 +187,7 @@ void loop() {
         if(dt<=0.0f || dt >0.5f) dt = FILTER_INTERVAL_MS / 1000.0f;
         // Leer aceleración vertical del MPU6050
         sensors_event_t a, g, temp;
-        dataSensors.mpu.getEvent(&a, &g, &temp);
+        dataSensors.icm.getEvent(&a, &g, &temp);
         float az_neta = a.acceleration.z -dataSensors.offsetZ- 9.81f;   // descontar gravedad
         // Altitud barométrica relativa al punto de lanzamiento
         float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
@@ -271,7 +297,7 @@ void loop() {
         unsigned long currentMillis = millis();
         if(currentMillis - previousMillis >= interval100ms){
             previousMillis = currentMillis;
-            TelemetryPacket pkt; // CREO EL PAQUETE EN BASE AL STRUCT DEFINIDO EN SENSORS.HPP
+            TelemetryPacket pkt{}; // CREO EL PAQUETE EN BASE AL STRUCT DEFINIDO EN SENSORS.HPP
             dataSensors.save_bmeDATA(&pkt); //GUARDA LOS DATOS DEL BME280 EN EL PAQUETE
             dataSensors.save_ens160DataNATH21(&pkt); //GUARDA LOS DATOS DEL ENS160 EN EL PAQUETE
             dataSensors.save_ltr390DATA(&pkt); //GUARDA LOS DATOS DEL LTR390 EN EL PAQUETE
