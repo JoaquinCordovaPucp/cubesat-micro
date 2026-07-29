@@ -1,6 +1,6 @@
 #include "acs.hpp"
 
-ACSController::ACSController() : minPulse(1000), maxPulse(2000), neutralPulse(1500), initialized(false) {} // Incializa los valores de pin e initialized, el pin 255 es un valor invalido, para indicar que no se ha inicializado aun.
+ACSController::ACSController() : initialized(false) {}
 
 void ACSController::begin(uint8_t rollPinNum, uint8_t pitchPinNum, int minUs, int maxUs) {
 	rollEsc.setPeriodHertz(50);
@@ -8,15 +8,15 @@ void ACSController::begin(uint8_t rollPinNum, uint8_t pitchPinNum, int minUs, in
 	pitchEsc.setPeriodHertz(50);
 	pitchEsc.attach(pitchPinNum, minUs, maxUs);
 	initialized = true;
-    stop();
+	stop();
 }
 
 void ACSController::stop() {
     if (!initialized) {
         return;
     }
-    setRollOutput(neutralPulse);
-	setPitchOutput(neutralPulse);
+	setRollOutput(1000);
+	setPitchOutput(1000);
 }
 
 

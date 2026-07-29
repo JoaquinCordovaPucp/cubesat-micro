@@ -5,7 +5,6 @@
 #include <Adafruit_BME280.h>
 #include <Adafruit_AHTX0.h>
 #include "Adafruit_LTR390.h"
-#include <Adafruit_MPU6050.h>
 #include <Wire.h>
 #define ENS160_I2C_ADDRESS 0x52
 
@@ -55,12 +54,7 @@ class Sensors {                 //Se crea una clase para manejar todos los senso
 public:                         //para que el codigo del cubesat quede mas ordenado. Ademas, si se quiere cambiar algun sensor o agregar uno nuevo, se puede hacer facilmente modificando esta clase sin tener que tocar el codigo del cubesat.
     Adafruit_BME280 bme;        //Se declaran los objetos de cada sensor y podran ser accesados asi: 
     Adafruit_LTR390 ltr390;
-    Adafruit_MPU6050 mpu;
     Adafruit_AHTX0 aht;
-    // Variables para guardar la calibración
-    float offsetX= 0.0;
-    float offsetY= 0.0;
-    float offsetZ= 0.0;
     //Definicion de funciones auxiliares relacionadas a los sensores
     void init(HardwareSerial* serial);
     void startENS160StandardMeasure();

@@ -42,30 +42,6 @@ void Sensors::init(HardwareSerial* serial) {    //Notese que se recibe un punter
         serial->println("No se pudo encontrar el sensor LTR390, revisar conexiones!");
         while (1);
     }
-    
-    //MPU6050
-    if (!mpu.begin()) {
-        serial->println("No se pudo encontrar el sensor MPU6050, revisar conexiones!");
-        while (1);
-    }
-    // Calibracion del MPU6050
-    serial->println("Calibrando MPU6050...");
-    delay(1000); // Esperar un momento para que el sensor se estabilice
-    float sumaX=0, sumaY=0,sumaZ=0;
-    int num_lecturas = 200;
-    for(int i=0; i<num_lecturas; i++) {
-        sensors_event_t a, g, temp;
-        mpu.getEvent(&a, &g, &temp);
-        sumaX += a.acceleration.x;
-        sumaY += a.acceleration.y;
-        sumaZ += a.acceleration.z -9.81f;
-        delay(10); // Pequeña pausa entre lecturas
-    }
-    // guardar el error promedio en las variables de offset
-    offsetX = sumaX / num_lecturas;
-    offsetY = sumaY / num_lecturas;
-    offsetZ = sumaZ / num_lecturas;
-    serial->println("Calibracion MPU6050 completa!");
 
 }
 
@@ -206,17 +182,16 @@ void Sensors::saveTime(struct TelemetryPacket* data) {
 //     )
 
 void Sensors::getACSData(struct ACSData* data) {
-    //MPU6050 (giroscopio y acelerometro)
-    sensors_event_t a, g, temp;
-    mpu.getEvent(&a, &g, &temp);
-    data->acex = a.acceleration.x - offsetX; // Aplicar la compensación calculada en init()
-    data->acey = a.acceleration.y - offsetY;
-    data->acez = a.acceleration.z - offsetZ;
-    data->gyrox = g.gyro.x;
-    data->gyroy = g.gyro.y;
-    data->gyroz = g.gyro.z;
-    data->roll = (a.acceleration.y/sqrt(a.acceleration.x*a.acceleration.x + a.acceleration.z*a.acceleration.z)) * (180.0/PI);
-    data->pitch = -a.acceleration.x/sqrt(a.acceleration.y*a.acceleration.y + a.acceleration.z*a.acceleration.z) * (180.0/PI);
+    data->incx_rad = 0.0f;
+    data->incy_rad = 0.0f;
+    data->gyrox = 0.0f;
+    data->gyroy = 0.0f;
+    data->gyroz = 0.0f;
+    data->acex = 0.0f;
+    data->acey = 0.0f;
+    data->acez = 0.0f;
+    data->roll = 0.0f;
+    data->pitch = 0.0f;
 }   
 
 // getBaroAltitude() — lee la altitud del BME280 en metros

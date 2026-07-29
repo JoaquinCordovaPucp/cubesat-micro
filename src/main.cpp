@@ -4,10 +4,14 @@
 #define voltagePin 34 //TODO: Elegir el pin
 
 #define ROLL_PIN 25
-#define PITCH_PIN 34
+#define PITCH_PIN 27
 // EL DME280 en modo normal entrega un dato cada ~20 ms (50 Hz).
 #define FILTER_INTERVAL_MS 20
 
+#define MOTOR_TEST_MICROSECONDS 1000
+
+#define MOTOR_TEST_STEP_MICROSECONDS 1100
+#define MOTOR_TEST_STEP_DELAY_MS 3000
 const float desiredRoll = 0.0; // Ángulo deseado de roll (en grados)
 const float desiredPitch = 0.0; // Ángulo deseado de pitch (en grados)
 float Kp = 1.0; // Ganancia proporcional
@@ -44,6 +48,8 @@ HardwareSerial GPSserial(2);
 int transmissionState = RADIOLIB_ERR_NONE;  // Aca se guardara el estado del radio, osea los errores (codigo), o no error (codigo 0)
 
 unsigned long previousMillis = 0; // Stores the last time the function was executed
+unsigned long motorStepStartMillis = 0;
+bool motorStepDone = false;
 volatile bool operationDone = false;
 int generalState = 0; // This stores the state of the machine (0: recien prendido y emitiendo un pulso, 1: standby, 2: trasmitiendo datos basico, 3: transmitiendo datos completos)
 bool transmitFlag = false; //   Si Verdadero, entonces estaba transmitiendo
@@ -65,13 +71,12 @@ void setup () {
     Wire.begin(21, 26); //Iniciar I2C (Lo uso para todos los sensores con I2C)
     //Esta funcion inicia Serial y los sensores(incluido pin voltaje)
     dataSensors.init(&Serial); // Le paso el objeto Serial como puntero(Este objeto esta definido por Arduino.h)  
-    acs.begin(ROLL_PIN, PITCH_PIN); // Inicializar el controlador ACS en los pines de roll/pitch usando rangos por defecto (1000-2000 us)
+    acs.begin(ROLL_PIN, PITCH_PIN); // Inicializar el controlador ACS en los pines de roll/pitch como servo PWM
     GPSserial.begin(9600, SERIAL_8N1, 16, 17); // Inciar GPS, con los pines en rx y tx seleccionados(rx del gps va al tx, y sucesivamente)
 
-    //ACCESO A TRAVES DEL OBJETO DE LA CLASE SENSORS, PARA CONFIGURAR LOS SENSORES.
-    dataSensors.mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-    dataSensors.mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-    dataSensors.mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);         //Configuracion del Acel y Giro MPU6050. TODO: Ver la configuracion idonea para el caso de uso
+
+
+    pinMode(13, OUTPUT); // CONTROL DEL MOTOR DE EYECCION
     dataSensors.ltr390.setMode(LTR390_MODE_UVS);
     dataSensors.ltr390.setGain(LTR390_GAIN_3);
     dataSensors.ltr390.setResolution(LTR390_RESOLUTION_16BIT);
@@ -113,40 +118,22 @@ void setup () {
     // Inicializar temporizadores del filtro
     filterLastMillis = millis();
     filterLastMicros = micros();
+    motorStepStartMillis = millis();
+
+    acs.setRollOutput(MOTOR_TEST_MICROSECONDS);
+	acs.setPitchOutput(MOTOR_TEST_MICROSECONDS);
+    Serial.println("Motor test activo en 1000 us en pines 25 y 27.");
 }
 
 void loop() {
+    digitalWrite(13, HIGH); // Motor de eyeccion encendido
+    if (!motorStepDone && millis() - motorStepStartMillis >= MOTOR_TEST_STEP_DELAY_MS) {
+        acs.setRollOutput(MOTOR_TEST_STEP_MICROSECONDS);
+        acs.setPitchOutput(MOTOR_TEST_STEP_MICROSECONDS);
+        motorStepDone = true;
+        Serial.println("Motor test cambiado a 1100 us en pines 25 y 27.");
+    }
     
-    // //Control ACS
-    // if(millis() - lastTime >= (interval10ms * 2)){ // Cada 20ms actualizo el control del ACS, para mantener la estabilidad del Cubesat. Se puede ajustar el intervalo segun se vea necesario, pero no es necesario que sea mas rapido que esto, y si es mas lento podria afectar la estabilidad.{
-    //     ACSData dataACS;
-    //     dataSensors.getACSData(&dataACS); //Guardo los datos del mput TODO: FALTA OTROS PARA ALTITUD
-    //     unsigned long now = millis();
-    //     float dt = (now - lastTime) / 1000.0; // Convertir a segundos
-        
-    //     //PID
-    //     //Proporcional
-    //     float errorRoll = desiredRoll - dataACS.roll;
-    //     float errorPitch = desiredPitch - dataACS.pitch;
-    //     //Integral
-    //     integralRoll += errorRoll * dt;
-    //     integralPitch += errorPitch * dt;
-    //     //Derivativo
-    //     float derivativeRoll = (errorRoll - previousErrorRoll) / dt;
-    //     float derivativePitch = (errorPitch - previousErrorPitch) / dt;
-    //     //Salida del PID
-    //     float outputRoll = Kp * errorRoll + Ki * integralRoll + Kd * derivativeRoll;
-    //     float outputPitch = Kp * errorPitch + Ki * integralPitch + Kd * derivativePitch;
-    //     //Actualizar errores anteriores y tiempo
-    //     previousErrorRoll = errorRoll;
-    //     previousErrorPitch = errorPitch;
-    //     lastTime = now;
-
-    //     //Controlar Reaction Wheel
-    //     acs.setPitchOutput(outputPitch);
-    //     acs.setRollOutput(outputRoll); // IMPORTNTE TODO: CLAMPEAR LOS OUPUTS PARA QUE SEAN LOGICOS
-    // }
-
     unsigned long nowMillis = millis();
     if(nowMillis - filterLastMillis >= FILTER_INTERVAL_MS) { // Cada 20 ms actualizo el filtro complementario
         // dt real en segundos desde la ultima ejecucion del filtro
@@ -159,10 +146,8 @@ void loop() {
         // condicional, si dt es invalido (primer ciclo, overflow de micros)
         // usar el intervalo nominal en lugar de un valor basura
         if(dt<=0.0f || dt >0.5f) dt = FILTER_INTERVAL_MS / 1000.0f;
-        // Leer aceleración vertical del MPU6050
-        sensors_event_t a, g, temp;
-        dataSensors.mpu.getEvent(&a, &g, &temp);
-        float az_neta = a.acceleration.z -dataSensors.offsetZ- 9.81f;   // descontar gravedad
+        // Sin MPU6050 disponible, se alimenta al filtro con aceleración cero.
+        float az_neta = 0.0f;
         // Altitud barométrica relativa al punto de lanzamiento
         float baro_relativa = dataSensors.getBaroAltitude() - baroAltitudeRef;
         // Ejecutar el filtro (incluye mediana del baro + ZUPT internamente)
