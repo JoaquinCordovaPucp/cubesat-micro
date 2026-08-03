@@ -6,6 +6,7 @@
 
 class TelemetryManager {
 private:
+    uint16_t numeroSecuencia;
     void limpiarPaquete(TelemetryPacket *paquete);
 
     void guardarTiempo(TelemetryPacket *paquete);
@@ -22,7 +23,8 @@ private:
         float altitud,
         float velocidadVertical
     );
-
+    void guardarSecuencia(TelemetryPacket *paquete);
+    
 public:
     TelemetryManager();
 
@@ -32,8 +34,7 @@ public:
 
     void crearStandBy(
     TelemetryPacket *paquete,
-    uint16_t lecturaVoltajeADC
-    );
+    float voltajeMilivoltios);
     
     void crearPaqueteBasico(
         TelemetryPacket *paquete
@@ -45,6 +46,12 @@ public:
         DatosGPS *datosGPS,
         float altitud,
         float velocidadVertical
+    );
+
+    void crearPaquetePostCaida(
+    TelemetryPacket *paquete,
+    float voltajeMilivoltios,
+    DatosGPS *datosGPS
     );
 };
 

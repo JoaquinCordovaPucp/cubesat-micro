@@ -1,5 +1,5 @@
 #include "CubeSat.hpp"
-
+#include <SPI.h>
 #include <Configuracion.hpp>
 
 CubeSat::CubeSat() {
@@ -14,14 +14,50 @@ CubeSat::CubeSat() {
     inicioPruebaMotoresMillis = 0;
     segundoPasoMotoresRealizado = false;
 
+
     datosSensores = {};
     datosGPS = {};
     paquete = {};
+
+    paracaidasHabilitado = false;
+    camaraActivada = false;
+
+    primeraEtapaActivada = false;
+    segundaEtapaActivada = false;
+
+    vueloIniciado = false;
+    aterrizajeDetectado = false;
+
+    alturaAnterior = 0.0f;
+    alturaMaximaAlcanzada = 0.0f;
+
+    inicioReposoMillis = 0;
 }
 
 void CubeSat::iniciar() {
     sensores.iniciar(&Serial);
 
+    SPI.begin(
+    PIN_SD_SCK,
+    PIN_SD_MISO,
+    PIN_SD_MOSI
+    );
+
+    pinMode(
+        PIN_LORA_NSS,
+        OUTPUT
+    );
+
+    digitalWrite(
+        PIN_LORA_NSS,
+        HIGH
+    );
+
+    registrador.iniciar(
+        PIN_SD_CS
+    );
+
+    radio.iniciar();
     controladorACS.begin(
         PIN_ROLL,
         PIN_PITCH,
@@ -31,52 +67,62 @@ void CubeSat::iniciar() {
 
     moduloGPS.iniciar();
 
-    sistemaEyeccion.begin(
-        PIN_MOTOR_EYECCION
-    );
+    sistemaParacaidas.begin(
+    PIN_PARACAIDAS);
 
-    radio.iniciar();
+    pinMode(PIN_CAMARA,
+        OUTPUT);
 
-    filtroAltitud.begin(
-        GANANCIA_POSICION_FILTRO,
-        GANANCIA_VELOCIDAD_FILTRO,
-        UMBRAL_REPOSO
-    );
+    digitalWrite(PIN_CAMARA,LOW);
+
 
     calibrarBarometro();
+
+    filtroAltitud.setEstadoInicial(
+        0.0f,
+        0.0f
+    );
+
+    filtroAltitud.setCovarianzaInicial(
+        VARIANZA_INICIAL_ALTITUD,
+        VARIANZA_INICIAL_VELOCIDAD
+    );
+
+    filtroAltitud.setRuidoProceso(
+        RUIDO_PROCESO_ALTITUD,
+        RUIDO_PROCESO_VELOCIDAD
+    );
+
+    filtroAltitud.setRuidoMedicion(
+        RUIDO_MEDICION_BAROMETRO
+    );
 
     ultimoFiltroMillis = millis();
     ultimoFiltroMicros = micros();
 
-    inicioPruebaMotoresMillis = millis();
-
-    controladorACS.setRollOutput(
-        PULSO_PRUEBA_INICIAL
-    );
-
-    controladorACS.setPitchOutput(
-        PULSO_PRUEBA_INICIAL
-    );
-
+    
     Serial.println(
         "CubeSat inicializado."
     );
 
-    Serial.println(
-        "Prueba de motores iniciada."
-    );
+
 }
 
 void CubeSat::actualizar() {
-    sistemaEyeccion.activate();
+    registrador.actualizar();
+    sistemaParacaidas.update();
 
-    actualizarPruebaMotores();
-    actualizarFiltroAltitud();
 
     radio.actualizar();
     procesarMensajesRadio();
 
     moduloGPS.actualizar();
+
+    if (estadoActual != POST_CAIDA) {
+        actualizarFiltroAltitud();
+        actualizarParacaidas();
+        actualizarDeteccionAterrizaje();
+    }
 
     ejecutarEstadoActual();
 }
@@ -144,8 +190,7 @@ void CubeSat::actualizarFiltroAltitud() {
 
     tiempoActualMillis = millis();
 
-    if (
-        tiempoActualMillis -
+    if (tiempoActualMillis -
         ultimoFiltroMillis <
         INTERVALO_FILTRO_ALTITUD
     ) {
@@ -181,17 +226,17 @@ void CubeSat::actualizarFiltroAltitud() {
             1000.0f;
     }
 
-    aceleracionVertical = 0.0f;
+    aceleracionVertical =
+        sensores.obtenerAceleracionVertical();
 
     altitudBarometricaRelativa =
         sensores.obtenerAltitudBarometrica() -
         altitudReferenciaBarometro;
 
-    filtroAltitud.estimate(
-        aceleracionVertical,
-        altitudBarometricaRelativa,
-        tiempoTranscurrido
-    );
+    filtroAltitud.actualizar(
+    aceleracionVertical,
+    altitudBarometricaRelativa,
+    tiempoTranscurrido);
 }
 
 void CubeSat::procesarMensajesRadio() {
@@ -240,45 +285,27 @@ void CubeSat::procesarMensaje(
             comando = "";
         }
 
+        confirmacion.trim();
+
         if (confirmacion == "ack") {
             estadoActual = EN_ESPERA;
 
             Serial.println(
-                "Se recibio ACK de la estacion en tierra."
+                "Se recibio ACK de la estacion."
             );
 
             if (comando != "") {
-                estadoActual =
-                    obtenerEstadoPorComando(
-                        comando
-                    );
+                procesarComando(comando);
             }
         }
 
         return;
     }
 
-    estadoActual =
-        obtenerEstadoPorComando(
-            mensaje
-        );
+    procesarComando(mensaje);
 }
 
-EstadoCubeSat CubeSat::obtenerEstadoPorComando(String comando) {
-    if (comando == "Stand By") {
-        return EN_ESPERA;
-    }
 
-    if (comando == "TomarDatosBasicos") {
-        return TELEMETRIA_BASICA;
-    }
-
-    if (comando == "TomarDatosTotales") {
-        return TELEMETRIA_COMPLETA;
-    }
-
-    return estadoActual;
-}
 
 void CubeSat::ejecutarEstadoActual() {
     switch (estadoActual) {
@@ -300,6 +327,9 @@ void CubeSat::ejecutarEstadoActual() {
 
         case DEBUG:
             ejecutarDebug();
+            break;
+        case POST_CAIDA:
+            ejecutarPostCaida();
             break;
     }
 }
@@ -345,14 +375,14 @@ void CubeSat::ejecutarStandBy() {
 
     ultimoEnvioMillis = tiempoActual;
 
-    uint16_t lecturaVoltajeADC;
+    float voltajeMilivoltios;
 
-    lecturaVoltajeADC =
-        sensores.obtenerLecturaVoltajeADC();
+    voltajeMilivoltios =
+        sensores.obtenerVoltajeMilivoltios();
 
     telemetria.crearStandBy(
         &paquete,
-        lecturaVoltajeADC
+        voltajeMilivoltios
     );
 
     enviarPaquete();
@@ -406,10 +436,10 @@ void CubeSat::ejecutarTelemetriaCompleta() {
     moduloGPS.actualizar();
     moduloGPS.obtenerDatos(&datosGPS);
 
-    telemetria.crearPaqueteCompleto(&paquete,&datosSensores,&datosGPS,
-        filtroAltitud.estimatedAltitude,
-        filtroAltitud.estimatedVelocity
-    );
+    telemetria.crearPaqueteCompleto(
+    &paquete,&datosSensores,&datosGPS,
+    filtroAltitud.getAltitud(),
+    filtroAltitud.getVelocidadVertical());
 
     enviarPaquete();
 
@@ -427,8 +457,277 @@ void CubeSat::ejecutarDebug() {
 }
 
 void CubeSat::enviarPaquete() {
+    registrador.guardarPaquete(
+        &paquete
+    );
+
     radio.enviarPaquete(
-        reinterpret_cast<uint8_t *>(&paquete),
+        (uint8_t *)&paquete,
         sizeof(paquete)
+    );
+}
+
+void CubeSat::imprimirPaquete() {
+    Serial.print("TYPE=");
+    Serial.print(paquete.TYPE);
+
+    Serial.print(", SEQ=");
+    Serial.print(paquete.SEQ);
+
+    Serial.print(", TIME=");
+    Serial.print(paquete.TIME);
+
+    Serial.print(", FLAGS=");
+    Serial.print(paquete.FLAGS);
+
+    Serial.print(", VOLT=");
+    Serial.print(paquete.VOLT);
+
+    Serial.print(", PRES=");
+    Serial.print(paquete.PRES);
+
+    Serial.print(", TEMP=");
+    Serial.print(paquete.TEMP);
+
+    Serial.print(", ECO2=");
+    Serial.print(paquete.ECO2);
+
+    Serial.print(", ETOH=");
+    Serial.print(paquete.ETOH);
+
+    Serial.print(", AQI=");
+    Serial.print(paquete.AQI);
+
+    Serial.print(", UV=");
+    Serial.print(paquete.UV);
+
+    Serial.print(", VVEL=");
+    Serial.print(paquete.VVEL);
+
+    Serial.print(", ALT=");
+    Serial.println(paquete.ALT);
+}
+
+void CubeSat::procesarComando(String comando) {
+    comando.trim();
+    comando.toLowerCase();
+
+    if (comando == "stand by") {
+        estadoActual = EN_ESPERA;
+    }
+    else if (
+        comando == "tomardatosbasicos"
+    ) {
+        estadoActual =
+            TELEMETRIA_BASICA;
+    }
+    else if (
+        comando == "tomardatostotales"
+    ) {
+        estadoActual =
+            TELEMETRIA_COMPLETA;
+    }
+    else if (
+        comando ==
+        "habilitar paracaidas"
+    ) {
+        paracaidasHabilitado = true;
+
+        Serial.println(
+            "Paracaidas habilitado."
+        );
+    }
+    else if (
+        comando ==
+        "activar camara"
+    ) {
+        camaraActivada = true;
+
+        digitalWrite(
+            PIN_CAMARA,
+            HIGH
+        );
+
+        Serial.println(
+            "Camara activada."
+        );
+    }
+    else {
+        Serial.println(
+            "Comando no reconocido."
+        );
+    }
+}
+
+void CubeSat::actualizarParacaidas() {
+    float alturaActual;
+    float velocidadVertical;
+
+    alturaActual =
+        filtroAltitud.getAltitud();
+
+    velocidadVertical =
+        filtroAltitud
+            .getVelocidadVertical();
+
+    if (alturaActual > alturaMaximaAlcanzada) {
+        alturaMaximaAlcanzada = alturaActual;
+    }
+
+    if (alturaMaximaAlcanzada >=ALTURA_MINIMA_INICIO_VUELO) {
+        vueloIniciado = true;
+    }
+
+    if (paracaidasHabilitado == false ||
+        vueloIniciado == false ||
+        aterrizajeDetectado == true) {
+        alturaAnterior =alturaActual;
+        return;
+    }
+
+    bool estaDescendiendo;
+
+
+    estaDescendiendo = velocidadVertical < VELOCIDAD_MINIMA_DESCENSO;
+
+    bool cruzoPrimeraEtapa;
+
+    cruzoPrimeraEtapa =
+        alturaAnterior >
+            ALTURA_PRIMERA_ETAPA &&
+        alturaActual <=
+            ALTURA_PRIMERA_ETAPA;
+
+    if (primeraEtapaActivada == false && estaDescendiendo == true &&
+        cruzoPrimeraEtapa == true) {
+        sistemaParacaidas.activate(
+            DURACION_PRIMERA_ETAPA
+        );
+
+        primeraEtapaActivada = true;
+
+        Serial.println(
+            "Paracaidas activado a 80 m por 3 s."
+        );
+    }
+
+    bool cruzoSegundaEtapa;
+
+    cruzoSegundaEtapa = alturaAnterior > ALTURA_SEGUNDA_ETAPA && 
+            alturaActual <= ALTURA_SEGUNDA_ETAPA;
+    if (
+        segundaEtapaActivada == false &&
+        estaDescendiendo == true &&
+        cruzoSegundaEtapa == true
+    ) {
+        sistemaParacaidas.activate(
+            DURACION_SEGUNDA_ETAPA
+        );
+
+        segundaEtapaActivada = true;
+
+        Serial.println(
+            "Desacople total a 10 m por 5 s."
+        );
+    }
+
+    alturaAnterior =
+        alturaActual;
+}
+
+void CubeSat::actualizarDeteccionAterrizaje() {
+    if (
+        vueloIniciado == false ||
+        aterrizajeDetectado == true
+    ) {
+        return;
+    }
+
+    float alturaActual;
+    float velocidadVertical;
+
+    alturaActual =
+        filtroAltitud.getAltitud();
+
+    velocidadVertical =
+        filtroAltitud
+            .getVelocidadVertical();
+
+    bool cercaDelPiso;
+    bool velocidadCasiCero;
+
+    cercaDelPiso =
+        fabs(alturaActual) <=
+        ALTURA_CERCA_DEL_PISO;
+
+    velocidadCasiCero =
+        fabs(velocidadVertical) <=
+        VELOCIDAD_MAXIMA_REPOSO;
+
+    if (
+        cercaDelPiso == true &&
+        velocidadCasiCero == true
+    ) {
+        if (inicioReposoMillis == 0) {
+            inicioReposoMillis =
+                millis();
+        }
+
+        if (
+            millis() -
+            inicioReposoMillis >=
+            TIEMPO_CONFIRMACION_ATERRIZAJE
+        ) {
+            aterrizajeDetectado = true;
+            estadoActual = POST_CAIDA;
+
+            sistemaParacaidas.deactivate();
+
+            Serial.println(
+                "Aterrizaje confirmado."
+            );
+        }
+    }
+    else {
+        inicioReposoMillis = 0;
+    }
+}
+
+void CubeSat::ejecutarPostCaida() {
+    unsigned long tiempoActual;
+
+    tiempoActual = millis();
+
+    if (
+        tiempoActual -
+        ultimoEnvioMillis <
+        INTERVALO_POST_CAIDA
+    ) {
+        return;
+    }
+
+    ultimoEnvioMillis =
+        tiempoActual;
+
+    moduloGPS.obtenerDatos(
+        &datosGPS
+    );
+
+    float voltajeMilivoltios;
+
+    voltajeMilivoltios =
+        sensores
+            .obtenerVoltajeMilivoltios();
+
+    telemetria.crearPaquetePostCaida(
+        &paquete,
+        voltajeMilivoltios,
+        &datosGPS
+    );
+
+    enviarPaquete();
+
+    Serial.println(
+        "Paquete post-caida enviado."
     );
 }

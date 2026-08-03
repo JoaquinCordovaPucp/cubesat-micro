@@ -4,19 +4,20 @@
 #include <Arduino.h>
 
 #include "ACSController.hpp"
-#include "AltitudeFilter.hpp"
+#include "AltitudeEKF.hpp"
 #include "EjectionSystem.hpp"
 #include "SensorManager.hpp"
 #include "GPSModule.hpp"
 #include "RadioCommunication.hpp"
 #include "TelemetryManager.hpp"
 #include "Estructuras.hpp"
+#include "DataLogger.hpp"
 
 class CubeSat {
 private:
     ACSController controladorACS;
-    AltitudeFilter filtroAltitud;
-    EjectionSystem sistemaEyeccion;
+    AltitudeEKF  filtroAltitud;
+    EjectionSystem sistemaParacaidas;
     SensorManager sensores;
     GPSModule moduloGPS;
     RadioCommunication radio;
@@ -27,7 +28,8 @@ private:
     DatosSensores datosSensores;
     DatosGPS datosGPS;
     TelemetryPacket paquete;
-
+    DataLogger registrador;
+    
     float altitudReferenciaBarometro;
 
     unsigned long ultimoEnvioMillis;
@@ -37,6 +39,20 @@ private:
     unsigned long inicioPruebaMotoresMillis;
     bool segundoPasoMotoresRealizado;
 
+    bool paracaidasHabilitado;
+    bool camaraActivada;
+
+    bool primeraEtapaActivada;
+    bool segundaEtapaActivada;
+
+    bool vueloIniciado;
+    bool aterrizajeDetectado;
+
+    float alturaAnterior;
+    float alturaMaximaAlcanzada;
+
+    unsigned long inicioReposoMillis;
+
     void calibrarBarometro();
 
     void actualizarPruebaMotores();
@@ -45,9 +61,6 @@ private:
     void procesarMensajesRadio();
     void procesarMensaje(String mensaje);
 
-    EstadoCubeSat obtenerEstadoPorComando(
-        String comando
-    );
 
     void ejecutarEstadoActual();
 
@@ -56,9 +69,18 @@ private:
     void ejecutarTelemetriaBasica();
     void ejecutarTelemetriaCompleta();
     void ejecutarDebug();
-
     void enviarPaquete();
 
+    void imprimirPaquete(); // para probar
+
+    void procesarComando(String comando);
+
+    void actualizarParacaidas();
+
+    void actualizarDeteccionAterrizaje();
+
+    void ejecutarPostCaida();
+        
 public:
     CubeSat();
 

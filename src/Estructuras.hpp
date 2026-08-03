@@ -8,7 +8,8 @@ enum EstadoCubeSat {
     ESPERANDO_ACK = 0,
     EN_ESPERA = 1,
     TELEMETRIA_BASICA = 2,
-    TELEMETRIA_COMPLETA = 3
+    TELEMETRIA_COMPLETA = 3,
+    POST_CAIDA = 4
 };
 
 struct DatosSensores {
@@ -36,6 +37,7 @@ struct DatosSensores {
 
     bool calidadAireValida;
     bool radiacionUVValida;
+    bool movimientoValido;
 };
 
 struct DatosGPS {
@@ -46,6 +48,8 @@ struct DatosGPS {
     bool ubicacionValida;
     bool velocidadValida;
 };
+
+#pragma pack(push, 1)
 
 struct TelemetryPacket {
     uint8_t TYPE;
@@ -84,4 +88,11 @@ struct TelemetryPacket {
 
     uint16_t CHK;
 };
+
+#pragma pack(pop)
+
+static_assert(
+    sizeof(TelemetryPacket) == 56,
+    "TelemetryPacket debe medir 56 bytes"
+);
 #endif

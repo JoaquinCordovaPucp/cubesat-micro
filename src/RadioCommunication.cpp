@@ -62,6 +62,26 @@ void RadioCommunication::iniciar() {
         cambiarBanderaRadio,
         RISING
     );
+    ultimoEstado =
+    radio.startReceive();
+
+    if (
+        ultimoEstado !=
+        RADIOLIB_ERR_NONE
+    ) {
+        Serial.print(
+            "Error al iniciar recepcion LoRa: "
+        );
+
+        Serial.println(
+            ultimoEstado
+        );
+    }
+    else {
+        Serial.println(
+            "LoRa escuchando comandos."
+        );
+    }
 }
 
 

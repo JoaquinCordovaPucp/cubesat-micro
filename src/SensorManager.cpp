@@ -2,10 +2,11 @@
 
 #include <Wire.h>
 #include <ScioSense_ENS16x.h>
+#include <math.h>
 
 #include "Configuracion.hpp"
 
-// Este objeto solo será utilizado dentro de este archivo.
+// Este objeto solo sera utilizado dentro de este archivo.
 static ENS160 ens160;
 
 SensorManager::SensorManager() {
@@ -14,6 +15,10 @@ SensorManager::SensorManager() {
     ultimaCalidadAire = 0;
 
     ultimoIndiceUV = 0.0f;
+
+    offsetAceleracionX = 0.0f;
+    offsetAceleracionY = 0.0f;
+    offsetAceleracionZ = 0.0f;
 }
 
 void SensorManager::iniciar(HardwareSerial *serial) {
@@ -63,6 +68,8 @@ void SensorManager::iniciar(HardwareSerial *serial) {
         }
     }
 
+    iniciarICM20948(serial);
+
     ltr390.setMode(LTR390_MODE_UVS);
     ltr390.setGain(LTR390_GAIN_3);
     ltr390.setResolution(LTR390_RESOLUTION_16BIT);
@@ -72,9 +79,118 @@ void SensorManager::iniciar(HardwareSerial *serial) {
     serial->println("Sensores inicializados.");
 }
 
+void SensorManager::iniciarICM20948(
+    HardwareSerial *serial
+) {
+    serial->println(
+        "Inicializando ICM-20948 en direccion 0x68."
+    );
+
+    if (
+        icm20948.begin_I2C(
+            DIRECCION_ICM20948,
+            &Wire
+        ) == false
+    ) {
+        serial->println(
+            "No se pudo encontrar el ICM-20948."
+        );
+
+        while (true) {
+            delay(10);
+        }
+    }
+
+    icm20948.setAccelRange(
+        ICM20948_ACCEL_RANGE_8_G
+    );
+
+    icm20948.setGyroRange(
+        ICM20948_GYRO_RANGE_500_DPS
+    );
+
+    icm20948.enableAccelDLPF(
+        true,
+        ICM20X_ACCEL_FREQ_23_9_HZ
+    );
+
+    icm20948.enableGyrolDLPF(
+        true,
+        ICM20X_GYRO_FREQ_23_9_HZ
+    );
+
+    serial->println(
+        "ICM-20948 inicializado correctamente."
+    );
+
+    calibrarICM20948(serial);
+}
+
+void SensorManager::calibrarICM20948(
+    HardwareSerial *serial
+) {
+    float sumaX;
+    float sumaY;
+    float sumaZ;
+
+    sumaX = 0.0f;
+    sumaY = 0.0f;
+    sumaZ = 0.0f;
+
+    serial->println(
+        "Calibrando ICM-20948. Mantener el CubeSat quieto."
+    );
+
+    delay(1000);
+
+    for (
+        int i = 0;
+        i < CANTIDAD_MUESTRAS_CALIBRACION_ICM;
+        i++
+    ) {
+        sensors_event_t acelerometro;
+        sensors_event_t giroscopio;
+        sensors_event_t temperatura;
+        sensors_event_t magnetometro;
+
+        icm20948.getEvent(
+            &acelerometro,
+            &giroscopio,
+            &temperatura,
+            &magnetometro
+        );
+
+        sumaX += acelerometro.acceleration.x;
+        sumaY += acelerometro.acceleration.y;
+
+        sumaZ +=
+            acelerometro.acceleration.z -
+            ACELERACION_GRAVEDAD;
+
+        delay(RETARDO_CALIBRACION_ICM);
+    }
+
+    offsetAceleracionX =
+        sumaX /
+        CANTIDAD_MUESTRAS_CALIBRACION_ICM;
+
+    offsetAceleracionY =
+        sumaY /
+        CANTIDAD_MUESTRAS_CALIBRACION_ICM;
+
+    offsetAceleracionZ =
+        sumaZ /
+        CANTIDAD_MUESTRAS_CALIBRACION_ICM;
+
+    serial->println(
+        "Calibracion del ICM-20948 completa."
+    );
+}
+
 void SensorManager::leer(DatosSensores *datos) {
     datos->calidadAireValida = false;
     datos->radiacionUVValida = false;
+    datos->movimientoValido = false;
 
     leerBME(datos);
     leerCalidadAire(datos);
@@ -165,16 +281,77 @@ void SensorManager::leerVoltaje(
 void SensorManager::leerMovimiento(
     DatosSensores *datos
 ) {
-    datos->giroscopioX = 0.0f;
-    datos->giroscopioY = 0.0f;
-    datos->giroscopioZ = 0.0f;
+    sensors_event_t acelerometro;
+    sensors_event_t giroscopio;
+    sensors_event_t temperatura;
+    sensors_event_t magnetometro;
 
-    datos->aceleracionX = 0.0f;
-    datos->aceleracionY = 0.0f;
-    datos->aceleracionZ = 0.0f;
+    bool lecturaCorrecta;
 
-    datos->roll = 0.0f;
-    datos->pitch = 0.0f;
+    lecturaCorrecta = icm20948.getEvent(
+        &acelerometro,
+        &giroscopio,
+        &temperatura,
+        &magnetometro
+    );
+
+    if (lecturaCorrecta == false) {
+        datos->giroscopioX = 0.0f;
+        datos->giroscopioY = 0.0f;
+        datos->giroscopioZ = 0.0f;
+
+        datos->aceleracionX = 0.0f;
+        datos->aceleracionY = 0.0f;
+        datos->aceleracionZ = 0.0f;
+
+        datos->roll = 0.0f;
+        datos->pitch = 0.0f;
+
+        return;
+    }
+
+    datos->aceleracionX =
+        acelerometro.acceleration.x -
+        offsetAceleracionX;
+
+    datos->aceleracionY =
+        acelerometro.acceleration.y -
+        offsetAceleracionY;
+
+    datos->aceleracionZ =
+        acelerometro.acceleration.z -
+        offsetAceleracionZ;
+
+    datos->giroscopioX =
+        giroscopio.gyro.x;
+
+    datos->giroscopioY =
+        giroscopio.gyro.y;
+
+    datos->giroscopioZ =
+        giroscopio.gyro.z;
+
+    datos->roll = atan2f(
+        datos->aceleracionY,
+        sqrtf(
+            datos->aceleracionX *
+            datos->aceleracionX +
+            datos->aceleracionZ *
+            datos->aceleracionZ
+        )
+    );
+
+    datos->pitch = atan2f(
+        -datos->aceleracionX,
+        sqrtf(
+            datos->aceleracionY *
+            datos->aceleracionY +
+            datos->aceleracionZ *
+            datos->aceleracionZ
+        )
+    );
+
+    datos->movimientoValido = true;
 }
 
 float SensorManager::calcularIndiceUV() {
@@ -206,12 +383,37 @@ uint16_t SensorManager::obtenerLecturaVoltajeADC() {
 }
 
 float SensorManager::obtenerVoltajeMilivoltios() {
-    uint16_t valorADC;
+    uint32_t voltajePinMilivoltios;
 
-    valorADC = obtenerLecturaVoltajeADC();
+    voltajePinMilivoltios =
+        analogReadMilliVolts(
+            PIN_VOLTAJE
+        );
 
-    return valorADC *
-           3.3f /
-           1023.0f *
-           1000.0f;
+    return (float)voltajePinMilivoltios;
+}
+
+float SensorManager::obtenerAceleracionVertical() {
+    sensors_event_t acelerometro;
+    sensors_event_t giroscopio;
+    sensors_event_t temperatura;
+    sensors_event_t magnetometro;
+
+    bool lecturaCorrecta;
+
+    lecturaCorrecta = icm20948.getEvent(
+        &acelerometro,
+        &giroscopio,
+        &temperatura,
+        &magnetometro
+    );
+
+    if (lecturaCorrecta == false) {
+        return 0.0f;
+    }
+
+    return
+        acelerometro.acceleration.z -
+        offsetAceleracionZ -
+        ACELERACION_GRAVEDAD;
 }

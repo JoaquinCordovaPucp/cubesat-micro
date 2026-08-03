@@ -8,11 +8,19 @@ private:
     int motorPin;
     bool active;
 
+    unsigned long activationStartMillis;
+    unsigned long activationDurationMillis;
+
 public:
     EjectionSystem();
 
     void begin(int pin);
-    void activate();
+
+    void activate(
+        unsigned long durationMillis
+    );
+
+    void update();
     void deactivate();
 
     bool isActive();

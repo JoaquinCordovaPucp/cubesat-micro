@@ -3,6 +3,7 @@
 #include <math.h>
 
 TelemetryManager::TelemetryManager() {
+    numeroSecuencia = 0;
 }
 
 void TelemetryManager::limpiarPaquete(
@@ -136,24 +137,33 @@ void TelemetryManager::crearHeartbeat(
     TelemetryPacket *paquete
 ) {
     limpiarPaquete(paquete);
-
+    guardarSecuencia(paquete);
+    guardarTiempo(paquete);
     paquete->TYPE = 0;
 }
 
 void TelemetryManager::crearStandBy(
     TelemetryPacket *paquete,
-    uint16_t lecturaVoltajeADC
+    float voltajeMilivoltios
 ) {
     limpiarPaquete(paquete);
+    guardarSecuencia(paquete);
+    guardarTiempo(paquete);
 
     paquete->TYPE = 1;
-    paquete->VOLT = lecturaVoltajeADC;
+
+    paquete->VOLT =
+        (uint16_t)lroundf(
+            voltajeMilivoltios
+        );
 }
 
 void TelemetryManager::crearPaqueteBasico(
     TelemetryPacket *paquete
 ) {
     limpiarPaquete(paquete);
+    guardarSecuencia(paquete);
+    guardarTiempo(paquete);
 
     paquete->TYPE = 2;
 }
@@ -166,6 +176,7 @@ void TelemetryManager::crearPaqueteCompleto(
     float velocidadVertical
 ) {
     limpiarPaquete(paquete);
+    guardarSecuencia(paquete);
 
     paquete->TYPE = 3;
 
@@ -185,5 +196,36 @@ void TelemetryManager::crearPaqueteCompleto(
         paquete,
         altitud,
         velocidadVertical
+    );
+}
+
+void TelemetryManager::guardarSecuencia(
+    TelemetryPacket *paquete
+) {
+    paquete->SEQ = numeroSecuencia;
+
+    numeroSecuencia++;
+}
+
+void TelemetryManager::crearPaquetePostCaida(
+    TelemetryPacket *paquete,
+    float voltajeMilivoltios,
+    DatosGPS *datosGPS
+) {
+    limpiarPaquete(paquete);
+
+    guardarSecuencia(paquete);
+    guardarTiempo(paquete);
+
+    paquete->TYPE = 4;
+
+    paquete->VOLT =
+        (uint16_t)lroundf(
+            voltajeMilivoltios
+        );
+
+    guardarDatosGPS(
+        paquete,
+        datosGPS
     );
 }
