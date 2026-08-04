@@ -20,6 +20,7 @@ CubeSat::CubeSat() {
     paquete = {};
 
     paracaidasHabilitado = false;
+    desacopleHabilitado = false;
     camaraActivada = false;
 
     primeraEtapaActivada = false;
@@ -110,6 +111,7 @@ void CubeSat::iniciar() {
 
 void CubeSat::actualizar() {
     registrador.actualizar();
+
     sistemaParacaidas.update();
 
 
@@ -117,6 +119,21 @@ void CubeSat::actualizar() {
     procesarMensajesRadio();
 
     moduloGPS.actualizar();
+
+
+
+    if(filtroAltitud.getAltitud() < 0.5 && filtroAltitud.getVelocidadVertical() < 0 &&
+       paracaidasHabilitado == true){
+        sistemaParacaidas.activate(3000);
+        paracaidasHabilitado = false;
+        desacopleHabilitado = true;
+    }
+
+    if(filtroAltitud.getAltitud() < 1 && filtroAltitud.getVelocidadVertical() < 0 &&
+       desacopleHabilitado == true){
+        sistemaParacaidas.activate(3000);
+        desacopleHabilitado = false;
+    }
 
     if (estadoActual != POST_CAIDA) {
         actualizarFiltroAltitud();
@@ -240,69 +257,39 @@ void CubeSat::actualizarFiltroAltitud() {
 }
 
 void CubeSat::procesarMensajesRadio() {
-    if (radio.hayMensaje() == false) {
+    if (radio.hayComando() == false) {
         return;
     }
 
-    String mensaje;
+    int comando;
 
-    mensaje = radio.obtenerMensaje();
+    comando = radio.obtenerComando();
 
-    procesarMensaje(mensaje);
+    procesarMensaje(comando);
 }
 
 void CubeSat::procesarMensaje(
-    String mensaje
+    int codigo
 ) {
     Serial.println(
-        "Se recibio un mensaje:"
+        "Se recibio un comando binario:"
     );
 
-    Serial.println(mensaje);
+    Serial.println(codigo);
 
-    if (estadoActual == ESPERANDO_ACK) {
-        int posicionSeparador;
-        String confirmacion;
-        String comando;
-
-        posicionSeparador =
-            mensaje.indexOf('&');
-
-        if (posicionSeparador != -1) {
-            confirmacion =
-                mensaje.substring(
-                    0,
-                    posicionSeparador
-                );
-
-            comando =
-                mensaje.substring(
-                    posicionSeparador + 1
-                );
-        }
-        else {
-            confirmacion = mensaje;
-            comando = "";
-        }
-
-        confirmacion.trim();
-
-        if (confirmacion == "ack") {
+    if (codigo == COMANDO_ACK) {
+        if (estadoActual == ESPERANDO_ACK) {
             estadoActual = EN_ESPERA;
 
             Serial.println(
                 "Se recibio ACK de la estacion."
             );
-
-            if (comando != "") {
-                procesarComando(comando);
-            }
         }
 
         return;
     }
 
-    procesarComando(mensaje);
+    procesarComando(codigo);
 }
 
 
@@ -508,28 +495,24 @@ void CubeSat::imprimirPaquete() {
     Serial.println(paquete.ALT);
 }
 
-void CubeSat::procesarComando(String comando) {
-    comando.trim();
-    comando.toLowerCase();
-
-    if (comando == "stand by") {
+void CubeSat::procesarComando(int comando) {
+    if (comando == COMANDO_STANDBY) {
         estadoActual = EN_ESPERA;
     }
     else if (
-        comando == "tomardatosbasicos"
+        comando == COMANDO_TELEMETRIA_BASICA
     ) {
         estadoActual =
             TELEMETRIA_BASICA;
     }
     else if (
-        comando == "tomardatostotales"
+        comando == COMANDO_TELEMETRIA_COMPLETA
     ) {
         estadoActual =
             TELEMETRIA_COMPLETA;
     }
     else if (
-        comando ==
-        "habilitar paracaidas"
+        comando == COMANDO_HABILITAR_PARACAIDAS
     ) {
         paracaidasHabilitado = true;
 
@@ -538,8 +521,7 @@ void CubeSat::procesarComando(String comando) {
         );
     }
     else if (
-        comando ==
-        "activar camara"
+        comando == COMANDO_ACTIVAR_CAMARA
     ) {
         camaraActivada = true;
 
@@ -554,7 +536,7 @@ void CubeSat::procesarComando(String comando) {
     }
     else {
         Serial.println(
-            "Comando no reconocido."
+            "Comando binario no reconocido."
         );
     }
 }

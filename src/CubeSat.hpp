@@ -41,7 +41,9 @@ private:
 
     bool paracaidasHabilitado;
     bool camaraActivada;
+    bool desacopleHabilitado;
 
+    
     bool primeraEtapaActivada;
     bool segundaEtapaActivada;
 
@@ -59,7 +61,7 @@ private:
     void actualizarFiltroAltitud();
 
     void procesarMensajesRadio();
-    void procesarMensaje(String mensaje);
+    void procesarMensaje(int codigo);
 
 
     void ejecutarEstadoActual();
@@ -73,13 +75,13 @@ private:
 
     void imprimirPaquete(); // para probar
 
-    void procesarComando(String comando);
+    void procesarComando(int comando);
 
     void actualizarParacaidas();
 
     void actualizarDeteccionAterrizaje();
 
-    void ejecutarPostCaida();
+    void ejecutarPostCaida(); // evaluar en funcion de la altura
         
 public:
     CubeSat();

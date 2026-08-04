@@ -23,9 +23,9 @@ RadioCommunication::RadioCommunication() :
     )
 {
     transmitiendo = false;
-    mensajeDisponible = false;
+    comandoDisponible = false;
 
-    ultimoMensaje = "";
+    ultimoComando = 0;
     ultimoEstado = RADIOLIB_ERR_NONE;
 }
 
@@ -100,14 +100,17 @@ void RadioCommunication::actualizar() {
         return;
     }
 
-    String mensajeRecibido;
+    uint8_t comandoRecibido;
 
     ultimoEstado =
-        radio.readData(mensajeRecibido);
+        radio.readData(
+            &comandoRecibido,
+            sizeof(comandoRecibido)
+        );
 
     if (ultimoEstado == RADIOLIB_ERR_NONE) {
-        ultimoMensaje = mensajeRecibido;
-        mensajeDisponible = true;
+        ultimoComando = comandoRecibido;
+        comandoDisponible = true;
     }
 
     radio.startReceive();
@@ -123,7 +126,7 @@ int RadioCommunication::enviarPaquete(
             datos,
             cantidadBytes
         );
-
+        
     if (ultimoEstado == RADIOLIB_ERR_NONE) {
         transmitiendo = true;
     }
@@ -132,20 +135,20 @@ int RadioCommunication::enviarPaquete(
 }
 
 
-bool RadioCommunication::hayMensaje() {
-    return mensajeDisponible;
+bool RadioCommunication::hayComando() {
+    return comandoDisponible;
 }
 
 
-String RadioCommunication::obtenerMensaje() {
-    String mensaje;
+int RadioCommunication::obtenerComando() {
+    int comando;
 
-    mensaje = ultimoMensaje;
+    comando = ultimoComando;
 
-    ultimoMensaje = "";
-    mensajeDisponible = false;
+    ultimoComando = 0;
+    comandoDisponible = false;
 
-    return mensaje;
+    return comando;
 }
 
 

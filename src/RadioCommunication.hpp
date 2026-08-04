@@ -9,9 +9,9 @@ private:
     SX1276 radio;
 
     bool transmitiendo;
-    bool mensajeDisponible;
+    bool comandoDisponible;
 
-    String ultimoMensaje;
+    uint8_t ultimoComando;
 
     int ultimoEstado;
 
@@ -26,8 +26,8 @@ public:
         int cantidadBytes
     );
 
-    bool hayMensaje();
-    String obtenerMensaje();
+    bool hayComando();
+    int obtenerComando();
 
     int obtenerUltimoEstado();
 };

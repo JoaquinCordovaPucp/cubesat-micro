@@ -12,6 +12,17 @@ enum EstadoCubeSat {
     POST_CAIDA = 4
 };
 
+// Códigos binarios para comandos recibidos por radio.
+// Usar 1 byte en el aire evita enviar strings completos.
+enum ComandoRadio : uint8_t {
+    COMANDO_ACK = 0,
+    COMANDO_STANDBY = 1,
+    COMANDO_TELEMETRIA_BASICA = 2,
+    COMANDO_TELEMETRIA_COMPLETA = 3,
+    COMANDO_HABILITAR_PARACAIDAS = 4,
+    COMANDO_ACTIVAR_CAMARA = 5
+};
+
 struct DatosSensores {
     float temperaturaKelvin;
     float presionPascales;

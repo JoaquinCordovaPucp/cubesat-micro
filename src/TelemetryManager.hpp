@@ -8,16 +8,12 @@ class TelemetryManager {
 private:
     uint16_t numeroSecuencia;
     void limpiarPaquete(TelemetryPacket *paquete);
-
     void guardarTiempo(TelemetryPacket *paquete);
-
     void guardarDatosSensores(TelemetryPacket *paquete, DatosSensores *datosSensores);
-
     void guardarDatosGPS(
         TelemetryPacket *paquete,
         DatosGPS *datosGPS
     );
-
     void guardarDatosFiltro(
         TelemetryPacket *paquete,
         float altitud,
@@ -27,15 +23,13 @@ private:
     
 public:
     TelemetryManager();
-
     void crearHeartbeat(
         TelemetryPacket *paquete
     );
-
     void crearStandBy(
     TelemetryPacket *paquete,
     float voltajeMilivoltios);
-    
+
     void crearPaqueteBasico(
         TelemetryPacket *paquete
     );

@@ -66,7 +66,7 @@ const int VELOCIDAD_GPS = 9600;
 
 // Intervalos de ejecución
 const unsigned long INTERVALO_HEARTBEAT = 1000;
-const unsigned long INTERVALO_TELEMETRIA = 100;
+const unsigned long INTERVALO_TELEMETRIA = 130;
 
 // Configuracion del filtro de altitud
 const unsigned long INTERVALO_FILTRO_ALTITUD = 20;
