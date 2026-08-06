@@ -20,14 +20,16 @@ CubeSat::CubeSat() {
     paquete = {};
 
     paracaidasHabilitado = false;
-    desacopleHabilitado = false;
+    paracaidasArmado = false;
     camaraActivada = false;
 
     primeraEtapaActivada = false;
     segundaEtapaActivada = false;
 
+    inicioConfirmacionArmadoMillis = 0;
     vueloIniciado = false;
     aterrizajeDetectado = false;
+
 
     alturaAnterior = 0.0f;
     alturaMaximaAlcanzada = 0.0f;
@@ -120,26 +122,16 @@ void CubeSat::actualizar() {
 
     moduloGPS.actualizar();
 
-
-
-    if(filtroAltitud.getAltitud() < 0.5 && filtroAltitud.getVelocidadVertical() < 0 &&
-       paracaidasHabilitado == true){
-        sistemaParacaidas.activate(3000);
-        paracaidasHabilitado = false;
-        desacopleHabilitado = true;
-    }
-
-    if(filtroAltitud.getAltitud() < 1 && filtroAltitud.getVelocidadVertical() < 0 &&
-       desacopleHabilitado == true){
-        sistemaParacaidas.activate(3000);
-        desacopleHabilitado = false;
-    }
-
-    if (estadoActual != POST_CAIDA) {
+    if (estadoActual != POST_CAIDA){
+        // Actualizar la altura y velocidad
         actualizarFiltroAltitud();
+
+        // luego decide si arma, abre o desacopla
         actualizarParacaidas();
+
         actualizarDeteccionAterrizaje();
     }
+
 
     ejecutarEstadoActual();
 }
@@ -545,76 +537,77 @@ void CubeSat::actualizarParacaidas() {
     float alturaActual;
     float velocidadVertical;
 
-    alturaActual =
-        filtroAltitud.getAltitud();
+    alturaActual = filtroAltitud.getAltitud();
 
-    velocidadVertical =
-        filtroAltitud
-            .getVelocidadVertical();
+    velocidadVertical = filtroAltitud.getVelocidadVertical();
 
-    if (alturaActual > alturaMaximaAlcanzada) {
-        alturaMaximaAlcanzada = alturaActual;
+    unsigned long tiempoActual = millis();
+
+    // 1. No hacer nada si no esta habilitado
+    if (paracaidasHabilitado == false) {
+        inicioConfirmacionArmadoMillis = 0;
+        alturaAnterior = alturaActual;
+        return;
     }
-
-    if (alturaMaximaAlcanzada >=ALTURA_MINIMA_INICIO_VUELO) {
-        vueloIniciado = true;
+    // despues del aterrizaje ya no se ejecutan acciones
+    if(aterrizajeDetectado == true){
+        alturaAnterior = alturaActual;
+        return;
     }
+    // confirmar que llego a 100 metros
+    if (paracaidasArmado == false){
+        // Todavia no comenzo el conteo
+        if (inicioConfirmacionArmadoMillis == 0) {
+            // conteo comienza cuando llega a 100 m
+            if (alturaActual >= ALTURA_INICIO_ARMADO) {
+                inicioConfirmacionArmadoMillis = tiempoActual;
+                Serial.println("Altura de 100 m alcanzada. " "Comenzando confirmacion de 10s.");
+            }
+        }
+        else {
+            // si baja de 95 m antes de terminar los 10 s, se cancela el conteo
+            if(alturaActual < ALTURA_CANCELAR_ARMADO){
+                inicioConfirmacionArmadoMillis =0;
+                Serial.println("Confirmacion cancelada: altura menor a 95 m.");
+            }else if (tiempoActual - inicioConfirmacionArmadoMillis >= TIEMPO_CONFIRMACION_ARMADO){
+                paracaidasArmado =true;
+                vueloIniciado =true;
+                Serial.println("Sistema de paracaidas preparado: altura confirmada durante 10s");
+            }
+        }
+        alturaAnterior = alturaActual;
+        return;
+    }
+    // confirmar que esta descendiendo
+    bool estaDescendiendo = velocidadVertical <= VELOCIDAD_MINIMA_DESCENSO;
+    
+    if (estaDescendiendo == false) {
+        alturaAnterior = alturaActual;
+        return;
+    }
+    
+    if (primeraEtapaActivada == false && alturaActual <= ALTURA_PRIMERA_ETAPA) {
+        sistemaParacaidas.activate(DURACION_PRIMERA_ETAPA);
+        primeraEtapaActivada = true;
+        Serial.print("Paracaidas activado a ");
+        Serial.print(alturaActual);
+        Serial.println(" m durante 3 segundos.");
 
-    if (paracaidasHabilitado == false ||
-        vueloIniciado == false ||
-        aterrizajeDetectado == true) {
-        alturaAnterior =alturaActual;
+        alturaAnterior = alturaActual;
+        
         return;
     }
 
-    bool estaDescendiendo;
+    // detectar el cruce de 3 metros
 
-
-    estaDescendiendo = velocidadVertical < VELOCIDAD_MINIMA_DESCENSO;
-
-    bool cruzoPrimeraEtapa;
-
-    cruzoPrimeraEtapa =
-        alturaAnterior >
-            ALTURA_PRIMERA_ETAPA &&
-        alturaActual <=
-            ALTURA_PRIMERA_ETAPA;
-
-    if (primeraEtapaActivada == false && estaDescendiendo == true &&
-        cruzoPrimeraEtapa == true) {
-        sistemaParacaidas.activate(
-            DURACION_PRIMERA_ETAPA
-        );
-
-        primeraEtapaActivada = true;
-
-        Serial.println(
-            "Paracaidas activado a 80 m por 3 s."
-        );
-    }
-
-    bool cruzoSegundaEtapa;
-
-    cruzoSegundaEtapa = alturaAnterior > ALTURA_SEGUNDA_ETAPA && 
-            alturaActual <= ALTURA_SEGUNDA_ETAPA;
-    if (
-        segundaEtapaActivada == false &&
-        estaDescendiendo == true &&
-        cruzoSegundaEtapa == true
-    ) {
-        sistemaParacaidas.activate(
-            DURACION_SEGUNDA_ETAPA
-        );
-
+    if (primeraEtapaActivada == true && segundaEtapaActivada == false && alturaActual <= ALTURA_SEGUNDA_ETAPA){
+        sistemaParacaidas.activate(DURACION_SEGUNDA_ETAPA);
         segundaEtapaActivada = true;
-
-        Serial.println(
-            "Desacople total a 10 m por 5 s."
-        );
+        Serial.print("Desacople activado a ");
+        Serial.print(alturaActual);
+        Serial.println(" m durante 5 segundos.");
     }
-
-    alturaAnterior =
-        alturaActual;
+    alturaAnterior = alturaActual;
 }
 
 void CubeSat::actualizarDeteccionAterrizaje() {

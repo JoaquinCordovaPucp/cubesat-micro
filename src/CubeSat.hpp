@@ -40,8 +40,9 @@ private:
     bool segundoPasoMotoresRealizado;
 
     bool paracaidasHabilitado;
+    bool paracaidasArmado;
+
     bool camaraActivada;
-    bool desacopleHabilitado;
 
     
     bool primeraEtapaActivada;
@@ -54,7 +55,9 @@ private:
     float alturaMaximaAlcanzada;
 
     unsigned long inicioReposoMillis;
-
+    // Guarda cuando comenzo la confirmacion
+    // de los 10 segundos de 100 m
+    unsigned long inicioConfirmacionArmadoMillis;
     void calibrarBarometro();
 
     void actualizarPruebaMotores();
