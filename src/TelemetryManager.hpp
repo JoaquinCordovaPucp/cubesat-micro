@@ -7,6 +7,7 @@
 class TelemetryManager {
 private:
     uint16_t numeroSecuencia;
+
     void limpiarPaquete(TelemetryPacket *paquete);
     void guardarTiempo(TelemetryPacket *paquete);
     void guardarDatosSensores(TelemetryPacket *paquete, DatosSensores *datosSensores);
@@ -20,18 +21,43 @@ private:
         float velocidadVertical
     );
     void guardarSecuencia(TelemetryPacket *paquete);
+    uint32_t construirFlags(
+        DatosSensores *datosSensores,
+        DatosGPS *datosGPS,
+        bool paracaidasHabilitado,
+        bool paracaidasArmado,
+        bool primeraEtapaActivada,
+        bool segundaEtapaActivada,
+        bool aterrizajeDetectado
+    );
     
 public:
     TelemetryManager();
     void crearHeartbeat(
-        TelemetryPacket *paquete
+        TelemetryPacket *paquete,
+        bool paracaidasHabilitado,
+        bool paracaidasArmado,
+        bool primeraEtapaActivada,
+        bool segundaEtapaActivada,
+        bool aterrizajeDetectado
     );
     void crearStandBy(
-    TelemetryPacket *paquete,
-    float voltajeMilivoltios);
+        TelemetryPacket *paquete,
+        float voltajeMilivoltios,
+        bool paracaidasHabilitado,
+        bool paracaidasArmado,
+        bool primeraEtapaActivada,
+        bool segundaEtapaActivada,
+        bool aterrizajeDetectado
+    );
 
     void crearPaqueteBasico(
-        TelemetryPacket *paquete
+        TelemetryPacket *paquete,
+        bool paracaidasHabilitado,
+        bool paracaidasArmado,
+        bool primeraEtapaActivada,
+        bool segundaEtapaActivada,
+        bool aterrizajeDetectado
     );
 
     void crearPaqueteCompleto(
@@ -39,13 +65,23 @@ public:
         DatosSensores *datosSensores,
         DatosGPS *datosGPS,
         float altitud,
-        float velocidadVertical
+        float velocidadVertical,
+        bool paracaidasHabilitado,
+        bool paracaidasArmado,
+        bool primeraEtapaActivada,
+        bool segundaEtapaActivada,
+        bool aterrizajeDetectado
     );
 
     void crearPaquetePostCaida(
-    TelemetryPacket *paquete,
-    float voltajeMilivoltios,
-    DatosGPS *datosGPS
+        TelemetryPacket *paquete,
+        float voltajeMilivoltios,
+        DatosGPS *datosGPS,
+        bool paracaidasHabilitado,
+        bool paracaidasArmado,
+        bool primeraEtapaActivada,
+        bool segundaEtapaActivada,
+        bool aterrizajeDetectado
     );
 };
 

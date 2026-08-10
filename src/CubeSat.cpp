@@ -19,7 +19,7 @@ CubeSat::CubeSat() {
     datosGPS = {};
     paquete = {};
 
-    paracaidasHabilitado = false;
+    paracaidasHabilitado = true;
     paracaidasArmado = false;
     camaraActivada = false;
 
@@ -329,7 +329,12 @@ void CubeSat::ejecutarEsperandoACK() {
     ultimoEnvioMillis = tiempoActual;
 
     telemetria.crearHeartbeat(
-        &paquete
+        &paquete,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
     );
 
     enviarPaquete();
@@ -361,7 +366,12 @@ void CubeSat::ejecutarStandBy() {
 
     telemetria.crearStandBy(
         &paquete,
-        voltajeMilivoltios
+        voltajeMilivoltios,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
     );
 
     enviarPaquete();
@@ -389,7 +399,12 @@ void CubeSat::ejecutarTelemetriaBasica() {
     delay(12);
 
     telemetria.crearPaqueteBasico(
-        &paquete
+        &paquete,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
     );
 
     enviarPaquete();
@@ -418,7 +433,12 @@ void CubeSat::ejecutarTelemetriaCompleta() {
     telemetria.crearPaqueteCompleto(
     &paquete,&datosSensores,&datosGPS,
     filtroAltitud.getAltitud(),
-    filtroAltitud.getVelocidadVertical());
+    filtroAltitud.getVelocidadVertical(),
+    paracaidasHabilitado,
+    paracaidasArmado,
+    primeraEtapaActivada,
+    segundaEtapaActivada,
+    aterrizajeDetectado);
 
     enviarPaquete();
 
@@ -697,7 +717,12 @@ void CubeSat::ejecutarPostCaida() {
     telemetria.crearPaquetePostCaida(
         &paquete,
         voltajeMilivoltios,
-        &datosGPS
+        &datosGPS,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
     );
 
     enviarPaquete();

@@ -15,7 +15,7 @@ const int PIN_LORA_RESET = 22;
 const int PIN_LORA_DIO1 = 3;
 
 // Pines del sistema ACS
-const int PIN_ROLL = 25;
+const int PIN_ROLL = 32;
 const int PIN_PITCH = 27;
 
 // Configuracion de los motores
@@ -42,7 +42,7 @@ const float ALTURA_MINIMA_INICIO_VUELO = 20.0f;
 const float ALTURA_CERCA_DEL_PISO = 3.0f;
 const float VELOCIDAD_MAXIMA_REPOSO = 0.5f;
 
-const unsigned long TIEMPO_CONFIRMACION_ATERRIZAJE = 40000;
+const unsigned long TIEMPO_CONFIRMACION_ATERRIZAJE = 10000;
 
 // Envio durante la post-caida
 const unsigned long INTERVALO_POST_CAIDA = 1000;
@@ -100,30 +100,30 @@ const float ANCHO_BANDA_LORA = 500.0f;
 const int PIN_SD_SCK = 18;
 const int PIN_SD_MISO = 19;
 const int PIN_SD_MOSI = 23;
-const int PIN_SD_CS = 34;
+const int PIN_SD_CS = 25;
 
 // Tiempo entre escrituras completas en la MicroSD
 const unsigned long INTERVALO_FLUSH_SD = 1000;
 
 // Altura que debe alcanzar el CubeSat
 // para comenzar a confirmar el vuelo
-const float ALTURA_INICIO_ARMADO = 100.0f;
+const float ALTURA_INICIO_ARMADO = 93.0f;
 
 // por seguridad
-const float ALTURA_CANCELAR_ARMADO = 95.0f;
+const float ALTURA_CANCELAR_ARMADO = 80.0f;
 
 // debe permanecer cerca de 100 m durante 10 s
 const unsigned long TIEMPO_CONFIRMACION_ARMADO = 10000;
 // Etapas del paracaidas
 
 // Apertura del paracaidas
-const float ALTURA_PRIMERA_ETAPA = 80.0f;
+const float ALTURA_PRIMERA_ETAPA = 86.0f;
 
 // desacople del paracaidas
-const float ALTURA_SEGUNDA_ETAPA = 3.0f;
+const float ALTURA_SEGUNDA_ETAPA = 14.0f;
 
 // duracion del pulso de apertura
-const unsigned long DURACION_PRIMERA_ETAPA = 3000;
+const unsigned long DURACION_PRIMERA_ETAPA = 4000;
 
 // duracion del pulso de desacople
 const unsigned long DURACION_SEGUNDA_ETAPA = 5000;

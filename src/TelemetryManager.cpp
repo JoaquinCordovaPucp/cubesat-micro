@@ -83,26 +83,6 @@ void TelemetryManager::guardarDatosSensores(
     paquete->PITCH = (int16_t)lroundf(
         datosSensores->pitch * 1000.0f
     );
-
-    if (datosSensores->calidadAireValida == true) {
-        paquete->FLAGS =
-            paquete->FLAGS |
-            (1UL << 9);
-
-        paquete->FLAGS =
-            paquete->FLAGS |
-            (1UL << 10);
-
-        paquete->FLAGS =
-            paquete->FLAGS |
-            (1UL << 11);
-    }
-
-    if (datosSensores->radiacionUVValida == true) {
-        paquete->FLAGS =
-            paquete->FLAGS |
-            (1UL << 12);
-    }
 }
 
 void TelemetryManager::guardarDatosGPS(
@@ -134,17 +114,37 @@ void TelemetryManager::guardarDatosFiltro(
 }
 
 void TelemetryManager::crearHeartbeat(
-    TelemetryPacket *paquete
+    TelemetryPacket *paquete,
+    bool paracaidasHabilitado,
+    bool paracaidasArmado,
+    bool primeraEtapaActivada,
+    bool segundaEtapaActivada,
+    bool aterrizajeDetectado
 ) {
     limpiarPaquete(paquete);
     guardarSecuencia(paquete);
     guardarTiempo(paquete);
     paquete->TYPE = 0;
+
+    paquete->FLAGS = construirFlags(
+        nullptr,
+        nullptr,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
+    );
 }
 
 void TelemetryManager::crearStandBy(
     TelemetryPacket *paquete,
-    float voltajeMilivoltios
+    float voltajeMilivoltios,
+    bool paracaidasHabilitado,
+    bool paracaidasArmado,
+    bool primeraEtapaActivada,
+    bool segundaEtapaActivada,
+    bool aterrizajeDetectado
 ) {
     limpiarPaquete(paquete);
     guardarSecuencia(paquete);
@@ -156,16 +156,41 @@ void TelemetryManager::crearStandBy(
         (uint16_t)lroundf(
             voltajeMilivoltios
         );
+
+    paquete->FLAGS = construirFlags(
+        nullptr,
+        nullptr,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
+    );
 }
 
 void TelemetryManager::crearPaqueteBasico(
-    TelemetryPacket *paquete
+    TelemetryPacket *paquete,
+    bool paracaidasHabilitado,
+    bool paracaidasArmado,
+    bool primeraEtapaActivada,
+    bool segundaEtapaActivada,
+    bool aterrizajeDetectado
 ) {
     limpiarPaquete(paquete);
     guardarSecuencia(paquete);
     guardarTiempo(paquete);
 
     paquete->TYPE = 2;
+
+    paquete->FLAGS = construirFlags(
+        nullptr,
+        nullptr,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
+    );
 }
 
 void TelemetryManager::crearPaqueteCompleto(
@@ -173,7 +198,12 @@ void TelemetryManager::crearPaqueteCompleto(
     DatosSensores *datosSensores,
     DatosGPS *datosGPS,
     float altitud,
-    float velocidadVertical
+    float velocidadVertical,
+    bool paracaidasHabilitado,
+    bool paracaidasArmado,
+    bool primeraEtapaActivada,
+    bool segundaEtapaActivada,
+    bool aterrizajeDetectado
 ) {
     limpiarPaquete(paquete);
     guardarSecuencia(paquete);
@@ -197,6 +227,16 @@ void TelemetryManager::crearPaqueteCompleto(
         altitud,
         velocidadVertical
     );
+
+    paquete->FLAGS = construirFlags(
+        datosSensores,
+        datosGPS,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
+    );
 }
 
 void TelemetryManager::guardarSecuencia(
@@ -207,10 +247,75 @@ void TelemetryManager::guardarSecuencia(
     numeroSecuencia++;
 }
 
+uint32_t TelemetryManager::construirFlags(
+    DatosSensores *datosSensores,
+    DatosGPS *datosGPS,
+    bool paracaidasHabilitado,
+    bool paracaidasArmado,
+    bool primeraEtapaActivada,
+    bool segundaEtapaActivada,
+    bool aterrizajeDetectado
+) {
+    uint32_t flags;
+
+    flags = 0;
+
+    if (datosSensores != nullptr) {
+        if (datosSensores->calidadAireValida == true) {
+            flags = flags | FLAG_CALIDAD_AIRE_VALIDA;
+        }
+
+        if (datosSensores->radiacionUVValida == true) {
+            flags = flags | FLAG_RADIACION_UV_VALIDA;
+        }
+
+        if (datosSensores->movimientoValido == true) {
+            flags = flags | FLAG_MOVIMIENTO_VALIDO;
+        }
+    }
+
+    if (datosGPS != nullptr) {
+        if (datosGPS->ubicacionValida == true) {
+            flags = flags | FLAG_GPS_UBICACION_VALIDA;
+        }
+
+        if (datosGPS->velocidadValida == true) {
+            flags = flags | FLAG_GPS_VELOCIDAD_VALIDA;
+        }
+    }
+
+    if (paracaidasHabilitado == true) {
+        flags = flags | FLAG_PARACAIDAS_HABILITADO;
+    }
+
+    if (paracaidasArmado == true) {
+        flags = flags | FLAG_PARACAIDAS_ARMADO;
+    }
+
+    if (primeraEtapaActivada == true) {
+        flags = flags | FLAG_PARACAIDAS_PRIMERA_ETAPA;
+    }
+
+    if (segundaEtapaActivada == true) {
+        flags = flags | FLAG_PARACAIDAS_SEGUNDA_ETAPA;
+    }
+
+    if (aterrizajeDetectado == true) {
+        flags = flags | FLAG_ATERRIZAJE_DETECTADO;
+    }
+
+    return flags;
+}
+
 void TelemetryManager::crearPaquetePostCaida(
     TelemetryPacket *paquete,
     float voltajeMilivoltios,
-    DatosGPS *datosGPS
+    DatosGPS *datosGPS,
+    bool paracaidasHabilitado,
+    bool paracaidasArmado,
+    bool primeraEtapaActivada,
+    bool segundaEtapaActivada,
+    bool aterrizajeDetectado
 ) {
     limpiarPaquete(paquete);
 
@@ -227,5 +332,15 @@ void TelemetryManager::crearPaquetePostCaida(
     guardarDatosGPS(
         paquete,
         datosGPS
+    );
+
+    paquete->FLAGS = construirFlags(
+        nullptr,
+        datosGPS,
+        paracaidasHabilitado,
+        paracaidasArmado,
+        primeraEtapaActivada,
+        segundaEtapaActivada,
+        aterrizajeDetectado
     );
 }

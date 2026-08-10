@@ -23,6 +23,21 @@ enum ComandoRadio : uint8_t {
     COMANDO_ACTIVAR_CAMARA = 5
 };
 
+// Bits de validez del campo FLAGS en TelemetryPacket.
+// Se usan para marcar qué grupos de datos del paquete son confiables.
+enum TelemetryFlags : uint32_t {
+    FLAG_CALIDAD_AIRE_VALIDA = 1UL << 0,
+    FLAG_RADIACION_UV_VALIDA = 1UL << 1,
+    FLAG_MOVIMIENTO_VALIDO = 1UL << 2,
+    FLAG_GPS_UBICACION_VALIDA = 1UL << 3,
+    FLAG_GPS_VELOCIDAD_VALIDA = 1UL << 4,
+    FLAG_PARACAIDAS_HABILITADO = 1UL << 5,
+    FLAG_PARACAIDAS_ARMADO = 1UL << 6,
+    FLAG_PARACAIDAS_PRIMERA_ETAPA = 1UL << 7,
+    FLAG_PARACAIDAS_SEGUNDA_ETAPA = 1UL << 8,
+    FLAG_ATERRIZAJE_DETECTADO = 1UL << 9
+};
+
 struct DatosSensores {
     float temperaturaKelvin;
     float presionPascales;
